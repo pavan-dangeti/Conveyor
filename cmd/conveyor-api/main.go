@@ -27,6 +27,7 @@ import (
 	"github.com/pavan-dangeti/Conveyor/internal/maintenance"
 	"github.com/pavan-dangeti/Conveyor/internal/migrate"
 	"github.com/pavan-dangeti/Conveyor/internal/store"
+	"github.com/pavan-dangeti/Conveyor/internal/ui"
 )
 
 func main() {
@@ -105,7 +106,19 @@ func main() {
 		_ = db.QueryRowContext(r.Context(), `SELECT count(*) FROM jobs WHERE state='running' AND lease_expiry < now()`).Scan(&reaped)
 		_, _ = fmt.Fprintf(rec, "conveyor_jobs_running_expired_lease %d\n", reaped)
 	})
-	httpMux.Handle("/", http.FileServer(http.Dir("internal/ui")))
+	httpMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		b, err := ui.FS.ReadFile("dashboard.html")
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(b)
+	})
 	httpMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	httpMux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		if err := db.PingContext(r.Context()); err != nil {
