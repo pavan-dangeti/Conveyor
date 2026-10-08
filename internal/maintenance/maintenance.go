@@ -70,6 +70,9 @@ func RunElectedLoop(ctx context.Context, db *sql.DB, logger *slog.Logger, tick t
 				if _, err := queue.PromoteDue(ctx, db); err != nil {
 					logger.Error("promote", "err", err)
 				}
+				if _, err := queue.ExpandDueCron(ctx, db, time.Now()); err != nil {
+					logger.Error("cron", "err", err)
+				}
 				if n, err := queue.ReapExpiredLeases(ctx, db); err != nil {
 					logger.Error("reap", "err", err)
 				} else if n > 0 {

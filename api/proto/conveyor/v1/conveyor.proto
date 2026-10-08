@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package conveyor.v1;
+
+option go_package = "github.com/pavan-dangeti/Conveyor/api/conveyor/v1;conveyorv1";
+
+import "google/api/annotations.proto";
+
+service Conveyor {
+  rpc Enqueue(EnqueueRequest) returns (EnqueueResponse) {
+    option (google.api.http) = { post: "/v1/jobs" body: "*" };
+  }
+  rpc GetJob(GetJobRequest) returns (Job) {
+    option (google.api.http) = { get: "/v1/jobs/{id}" };
+  }
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse) {
+    option (google.api.http) = { get: "/v1/jobs" };
+  }
+  rpc CancelJob(CancelJobRequest) returns (StatusResponse) {
+    option (google.api.http) = { post: "/v1/jobs/{id}:cancel" body: "*" };
+  }
+  rpc RetryJob(RetryJobRequest) returns (StatusResponse) {
+    option (google.api.http) = { post: "/v1/jobs/{id}:retry" body: "*" };
+  }
+  rpc ListQueues(ListQueuesRequest) returns (ListQueuesResponse) {
+    option (google.api.http) = { get: "/v1/queues" };
+  }
+  rpc CreateCron(CreateCronRequest) returns (CronSchedule) {
+    option (google.api.http) = { post: "/v1/cron" body: "*" };
+  }
+}
+
+message Job {
+  int64 id = 1;
+  string queue = 2;
+  string kind = 3;
+  bytes args = 4;
+  string state = 5;
+  int32 priority = 6;
+  int32 attempt = 7;
+  int32 max_attempts = 8;
+  string run_at = 9;
+  int64 lease_version = 10;
+  string created_at = 11;
+}
+
+message EnqueueRequest {
+  string queue = 1;
+  string kind = 2;
+  bytes args = 3;
+  int32 priority = 4;
+  int32 max_attempts = 5;
+  string idempotency_key = 6;
+  int32 delay_seconds = 7;
+}
+message EnqueueResponse { int64 id = 1; bool deduped = 2; }
+
+message GetJobRequest { int64 id = 1; }
+message ListJobsRequest {
+  string queue = 1;
+  string state = 2;
+  int32 limit = 3;
+}
+message ListJobsResponse { repeated Job jobs = 1; }
+message CancelJobRequest { int64 id = 1; }
+message RetryJobRequest { int64 id = 1; }
+message StatusResponse { bool ok = 1; }
+message ListQueuesRequest {}
+message QueueInfo {
+  string name = 1;
+  int32 concurrency = 2;
+  double rate_limit_per_sec = 3;
+  map<string, int64> depth_by_state = 4;
+}
+message ListQueuesResponse { repeated QueueInfo queues = 1; }
+message CronSchedule {
+  int64 id = 1;
+  string queue = 2;
+  string kind = 3;
+  bytes args = 4;
+  string spec = 5;
+  string next_run_at = 6;
+  bool enabled = 7;
+}
+message CreateCronRequest {
+  string queue = 1;
+  string kind = 2;
+  bytes args = 3;
+  string spec = 4;
+}
