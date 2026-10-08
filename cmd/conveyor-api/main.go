@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -10,7 +11,9 @@ import (
 	"syscall"
 	"time"
 
+	_ "embed"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -43,6 +46,9 @@ func main() {
 	if err := migrate.Up(context.Background(), db); err != nil {
 		logger.Error("migrate", "err", err)
 		os.Exit(1)
+	}
+	if _, err := db.Exec(`INSERT INTO queues(name) VALUES ('default') ON CONFLICT DO NOTHING`); err != nil {
+		logger.Error("seed default queue", "err", err)
 	}
 	grpcAddr := getenv("GRPC_ADDR", ":9090")
 	httpAddr := getenv("HTTP_ADDR", ":8080")
@@ -81,6 +87,25 @@ func main() {
 	}
 	httpMux := http.NewServeMux()
 	httpMux.Handle("/v1/", maxBytes(authHTTP(token, mux), 64*1024))
+	httpMux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		rec := &metricsRecorder{ResponseWriter: w, code: 200}
+		promhttp.Handler().ServeHTTP(rec, r)
+		rows, err := db.QueryContext(r.Context(), `SELECT state, count(*) FROM jobs GROUP BY state`)
+		if err != nil {
+			return
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var state string
+			var n int64
+			_ = rows.Scan(&state, &n)
+			_, _ = fmt.Fprintf(rec, "conveyor_jobs{state=%q} %d\n", state, n)
+		}
+		var reaped int64
+		_ = db.QueryRowContext(r.Context(), `SELECT count(*) FROM jobs WHERE state='running' AND lease_expiry < now()`).Scan(&reaped)
+		_, _ = fmt.Fprintf(rec, "conveyor_jobs_running_expired_lease %d\n", reaped)
+	})
+	httpMux.Handle("/", http.FileServer(http.Dir("internal/ui")))
 	httpMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	httpMux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		if err := db.PingContext(r.Context()); err != nil {
@@ -127,6 +152,13 @@ func authHTTP(token string, next http.Handler) http.Handler {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	})
 }
+
+type metricsRecorder struct {
+	http.ResponseWriter
+	code int
+}
+
+func (m *metricsRecorder) WriteHeader(code int) { m.code = code; m.ResponseWriter.WriteHeader(code) }
 
 func maxBytes(next http.Handler, n int64) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

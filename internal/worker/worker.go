@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,6 +23,7 @@ type Worker struct {
 	dsn            string
 	queue          string
 	owner          string
+	inflight       atomic.Int32
 	lease          time.Duration
 	batch          int
 	handlerCommits bool
@@ -78,10 +80,15 @@ func (w *Worker) Run(ctx context.Context) error {
 			w.logger.Error("dequeue", "err", err)
 		} else {
 			for _, j := range jobs {
+				for w.inflight.Load() >= int32(w.batch) {
+					time.Sleep(10 * time.Millisecond)
+				}
 				if h, ok := w.handlers[j.Kind]; ok {
+					w.inflight.Add(1)
 					wg.Add(1)
 					go func(j queue.Job, h Handler) {
 						defer wg.Done()
+						defer w.inflight.Add(-1)
 						w.execute(ctx, j, h)
 					}(j, h)
 				} else {
