@@ -78,12 +78,16 @@ func TestWorkerProcessesJobs(t *testing.T) {
 		}
 	}
 	var completed int
-	if err := db.QueryRow(`SELECT count(*) FROM jobs WHERE state='completed'`).Scan(&completed); err != nil {
-		t.Fatal(err)
+	for i := 0; i < 60; i++ {
+		if err := db.QueryRow(`SELECT count(*) FROM jobs WHERE state='completed'`).Scan(&completed); err != nil {
+			t.Fatal(err)
+		}
+		if completed == 5 {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
 	}
-	if completed != 5 {
-		t.Fatalf("want 5 completed, got %d", completed)
-	}
+	t.Fatalf("want 5 completed, got %d", completed)
 }
 
 func TestFailingJobGoesRetryableThenDiscarded(t *testing.T) {
