@@ -25,3 +25,17 @@ jobs:
         run: go test -race -coverprofile=coverage.out ./...
       - name: govulncheck
         uses: golang/govulncheck-action@v1
+
+  tlc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: download tla2tools (pinned v1.8.0)
+        run: curl -sSfL -o tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+      - name: TLC model check
+        working-directory: spec/tla
+        run: java -cp ../../tla2tools.jar tlc2.TLC Conveyor.tla -config Conveyor.cfg -deadlock
