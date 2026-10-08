@@ -93,12 +93,6 @@ WHERE l.fencing_token <> j.lease_version`)
 	if ns > 0 {
 		r.Violations = append(r.Violations, fmt.Sprintf("%d jobs running with lease long past expiry", ns))
 	}
-	// Every job should be terminal or retryable/available (i.e. nothing lost).
-	if running := r.ByState["running"]; running > 0 {
-		if _, ok := r.ByState["completed"]; !ok && running > 0 {
-			// in-progress is normal during a run; only flag after the wait loop
-		}
-	}
 	return r, nil
 }
 
