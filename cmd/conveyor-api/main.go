@@ -60,8 +60,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go func() {
-		if err := maintenance.RunElectedLoop(ctx, db, logger, 500*time.Millisecond); err != nil {
-			logger.Error("maintenance", "err", err)
+		for ctx.Err() == nil {
+			if err := maintenance.RunElectedLoop(ctx, db, logger, 500*time.Millisecond); err != nil {
+				logger.Error("maintenance", "err", err)
+				time.Sleep(time.Second)
+			}
 		}
 	}()
 	go func() {
