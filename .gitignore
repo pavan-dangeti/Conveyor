@@ -21,3 +21,4 @@ spec/tla/*_TTrace_*.tla
 spec/tla/states/
 spec/tla/*_TTrace_*.bin
 **/testdata/rapid/
+/conveyor-api
