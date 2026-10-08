@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/robfig/cron/v3"
 	"math/rand/v2"
 	"sort"
 	"time"
@@ -70,17 +71,16 @@ func Enqueue(ctx context.Context, db *sql.DB, p EnqueueParams) (id int64, dedupe
 		max = DefaultMaxAttempts
 	}
 	state := statemachine.Available
-	runAt := time.Now()
-	if p.Delay > 0 {
+	delay := p.Delay
+	if delay > 0 {
 		state = statemachine.Scheduled
-		runAt = runAt.Add(p.Delay)
 	}
 	err = db.QueryRowContext(ctx, `
 INSERT INTO jobs (queue, kind, args, state, priority, max_attempts, run_at, idempotency_key, trace_context)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 * interval '1 millisecond'), $8, $9)
 ON CONFLICT (queue, idempotency_key) DO NOTHING
 RETURNING id`,
-		p.Queue, p.Kind, p.Args, string(state), p.Priority, max, runAt, p.IdempotencyKey, p.TraceContext,
+		p.Queue, p.Kind, p.Args, string(state), p.Priority, max, delay.Milliseconds(), p.IdempotencyKey, p.TraceContext,
 	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		if p.IdempotencyKey == nil {
@@ -116,11 +116,25 @@ WITH picked AS (
   SELECT id FROM jobs j
   WHERE state = 'available'
     AND queue = $1 AND run_at <= now()
+    AND NOT EXISTS (
+      SELECT 1 FROM job_dependencies d JOIN jobs dep ON dep.id = d.depends_on
+      WHERE d.job_id = j.id AND dep.state <> 'completed')
     AND (SELECT count(*) FROM jobs r WHERE r.queue=$1 AND r.state='running')
         < (SELECT concurrency FROM queues WHERE name=$1)
+    AND (
+      (SELECT rate_limit_per_sec FROM queues WHERE name=$1) IS NULL
+      OR COALESCE((SELECT last_dispatch FROM queue_rate WHERE queue=$1), '-infinity'::timestamptz)
+         + make_interval(secs => $4::float / (SELECT rate_limit_per_sec FROM queues WHERE name=$1))
+         <= now()
+    )
   ORDER BY priority DESC, run_at, id
   LIMIT $4
   FOR UPDATE SKIP LOCKED
+), dispatch AS (
+  INSERT INTO queue_rate(queue, last_dispatch)
+  SELECT $1, now() WHERE (SELECT count(*) FROM picked) > 0
+  ON CONFLICT (queue) DO UPDATE SET last_dispatch = now()
+  RETURNING queue
 )
 UPDATE jobs SET state='running', attempt=attempt+1,
   lease_owner=$2, lease_expiry=now()+$3::interval, lease_version=lease_version+1,
@@ -311,4 +325,50 @@ WHERE id=$1 AND state='discarded'`, id)
 		return fmt.Errorf("job %d not in discarded state", id)
 	}
 	return nil
+}
+
+// ExpandDueCron enqueues jobs for every enabled schedule whose next_run_at
+// is due. Idempotency keys derived from (id, next_run_at) make it safe to
+// run on every leader tick and across failovers.
+func ExpandDueCron(ctx context.Context, db *sql.DB, now time.Time) (int64, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, queue, kind, args, spec, next_run_at FROM cron_schedules WHERE enabled AND next_run_at <= $1`, now)
+	if err != nil {
+		return 0, err
+	}
+	type sched struct {
+		id    int64
+		queue string
+		kind  string
+		args  []byte
+		spec  string
+		next  time.Time
+	}
+	var due []sched
+	for rows.Next() {
+		var s sched
+		if err := rows.Scan(&s.id, &s.queue, &s.kind, &s.args, &s.spec, &s.next); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		due = append(due, s)
+	}
+	_ = rows.Close()
+	var n int64
+	for _, s := range due {
+		cs, err := cron.ParseStandard(s.spec)
+		if err != nil {
+			return n, fmt.Errorf("schedule %d: %w", s.id, err)
+		}
+		key := fmt.Sprintf("cron:%d:%d", s.id, s.next.Unix())
+		if _, _, err := Enqueue(ctx, db, EnqueueParams{
+			Queue: s.queue, Kind: s.kind, Args: s.args, IdempotencyKey: &key,
+		}); err != nil {
+			return n, err
+		}
+		n++
+		if _, err := db.ExecContext(ctx, `UPDATE cron_schedules SET next_run_at=$2 WHERE id=$1`, s.id, cs.Next(now)); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
 }

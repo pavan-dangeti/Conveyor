@@ -133,3 +133,105 @@ func TestCancelAndRetry(t *testing.T) {
 		t.Fatalf("want available, got %s", state)
 	}
 }
+
+func TestRateLimitAndDependencyGate(t *testing.T) {
+	db := setup(t)
+	ctx := context.Background()
+	if _, err := db.Exec(`INSERT INTO queues(name, rate_limit_per_sec) VALUES ('limited', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 4; i++ {
+		if _, _, err := queue.Enqueue(ctx, db, queue.EnqueueParams{Queue: "limited", Kind: "k", Args: json.RawMessage(`{}`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	j1, err := queue.Dequeue(ctx, db, "limited", "w1", 30*time.Second, 2)
+	if err != nil || len(j1) != 2 {
+		t.Fatal(len(j1), err)
+	}
+	j2, err := queue.Dequeue(ctx, db, "limited", "w1", 30*time.Second, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(j2) != 0 {
+		t.Fatalf("rate limit should block second batch, got %d", len(j2))
+	}
+	// dependency gate
+	if _, _, err := queue.Enqueue(ctx, db, queue.EnqueueParams{Queue: "q1", Kind: "dep", Args: json.RawMessage(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	var parent int64
+	_ = parent
+	if _, err := db.Exec(`INSERT INTO jobs(queue, kind, args, state) VALUES ('q1','parent','{}','available')`); err != nil {
+		t.Fatal(err)
+	}
+	var pid int64
+	if err := db.QueryRow(`SELECT id FROM jobs WHERE kind='parent'`).Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	var cid int64
+	if _, _, err := queue.Enqueue(ctx, db, queue.EnqueueParams{Queue: "q1", Kind: "child", Args: json.RawMessage(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT id FROM jobs WHERE kind='child'`).Scan(&cid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO job_dependencies(job_id, depends_on) VALUES ($1, $2)`, cid, pid); err != nil {
+		t.Fatal(err)
+	}
+	kids, err := queue.Dequeue(ctx, db, "q1", "w1", 30*time.Second, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range kids {
+		if j.Kind == "child" {
+			t.Fatal("child dequeued before parent completed")
+		}
+	}
+	if _, err := db.Exec(`UPDATE jobs SET state='completed' WHERE id=$1`, pid); err != nil {
+		t.Fatal(err)
+	}
+	kids, err = queue.Dequeue(ctx, db, "q1", "w1", 30*time.Second, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, j := range kids {
+		if j.Kind == "child" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("child should be dequeued after parent completed")
+	}
+}
+
+func TestExpandDueCron(t *testing.T) {
+	db := setup(t)
+	ctx := context.Background()
+	_, err := db.Exec(`INSERT INTO cron_schedules(queue, kind, args, spec, next_run_at) VALUES ('q1','tick','{}','*/5 * * * *', now() - interval '1 minute')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := queue.ExpandDueCron(ctx, db, time.Now())
+	if err != nil || n != 1 {
+		t.Fatalf("want 1 expanded, got %d %v", n, err)
+	}
+	var state string
+	if err := db.QueryRow(`SELECT state FROM jobs WHERE queue='q1'`).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "available" {
+		t.Fatalf("want available, got %s", state)
+	}
+	// Second run must not duplicate (idempotency key on cron occurrence).
+	n, err = queue.ExpandDueCron(ctx, db, time.Now())
+	if err != nil || n != 0 {
+		t.Fatalf("want 0 expanded second time, got %d %v", n, err)
+	}
+	var c int
+	_ = db.QueryRow(`SELECT count(*) FROM jobs`).Scan(&c)
+	if c != 1 {
+		t.Fatalf("want exactly 1 job, got %d", c)
+	}
+}
