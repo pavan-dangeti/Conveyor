@@ -1,0 +1,22 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+
+# Build output
+/bin/
+/dist/
+*.test
+coverage.out
+
+# Editor
+.idea/
+.vscode/
+
+# TLA+ trace output
+spec/tla/*_TTrace_*.tla
+spec/tla/states/
+spec/tla/*_TTrace_*.bin
