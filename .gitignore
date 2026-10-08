@@ -18,3 +18,5 @@ coverage.out
 
 # TLA+ trace output
 spec/tla/*_TTrace_*.tla
+spec/tla/states/
+spec/tla/*_TTrace_*.bin
