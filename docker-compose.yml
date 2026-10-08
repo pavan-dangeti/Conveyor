@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: conveyor
       POSTGRES_PASSWORD: conveyor
     ports:
-      - "5432:5432"
+      - "127.0.0.1:55433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

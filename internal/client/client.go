@@ -37,7 +37,7 @@ func (c *Client) ctx(ctx context.Context) context.Context {
 
 func (c *Client) Enqueue(ctx context.Context, queueName, kind string, args []byte, priority int32, maxAttempts int32, delay time.Duration, idempotencyKey string) (int64, bool, error) {
 	r, err := c.c.Enqueue(c.ctx(ctx), &conveyorv1.EnqueueRequest{
-		Queue: queueName, Kind: kind, Args: args, Priority: priority,
+		Queue: queueName, Kind: kind, Args: string(args), Priority: priority,
 		MaxAttempts: maxAttempts, DelaySeconds: int32(delay.Seconds()), IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
@@ -69,5 +69,5 @@ func (c *Client) ListQueues(ctx context.Context) (*conveyorv1.ListQueuesResponse
 }
 
 func (c *Client) CreateCron(ctx context.Context, queueName, kind string, args []byte, spec string) (*conveyorv1.CronSchedule, error) {
-	return c.c.CreateCron(c.ctx(ctx), &conveyorv1.CreateCronRequest{Queue: queueName, Kind: kind, Args: args, Spec: spec})
+	return c.c.CreateCron(c.ctx(ctx), &conveyorv1.CreateCronRequest{Queue: queueName, Kind: kind, Args: string(args), Spec: spec})
 }
