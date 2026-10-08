@@ -1,0 +1,21 @@
+{
+  "title": "Conveyor",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Jobs by state",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "targets": [{"expr": "conveyor_jobs", "legendFormat": "{{state}}"}]
+    },
+    {
+      "id": 2,
+      "title": "Running with expired lease",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [{"expr": "conveyor_jobs_running_expired_lease"}]
+    }
+  ]
+}

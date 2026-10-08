@@ -1,0 +1,28 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Conveyor</title>
+<style>
+ body{font-family:ui-monospace,monospace;background:#0b0f14;color:#c9d4e0;margin:24px}
+ h1{font-size:18px} h2{font-size:14px;color:#7fd1a8;margin-top:28px}
+ table{border-collapse:collapse} td,th{border:1px solid #233041;padding:6px 12px;text-align:left}
+ th{color:#7fd1a8} button{background:#23476b;color:#cfe6ff;border:0;padding:4px 10px;cursor:pointer;border-radius:4px}
+ small{color:#5b6b7c} #status{color:#e2c07f}
+</style></head><body>
+<h1>Conveyor dashboard <span id="status"></span></h1>
+<p><small>refresh 2s. Auth: set CONVEYOR_API_TOKEN in browser localStorage.conveyor_token</small></p>
+<p><button onclick="seed(10)">enqueue 10 jobs</button> <button onclick="seed(100)">100 jobs</button></p>
+<h2>Queues</h2><table id="queues"><thead><tr><th>name</th><th>concurrency</th><th>rate/sec</th><th>depth</th></tr></thead><tbody></tbody></table>
+<h2>Recent jobs</h2><table id="jobs"><thead><tr><th>id</th><th>queue</th><th>kind</th><th>state</th><th>attempt</th><th>action</th></tr></thead><tbody></tbody></table>
+<h2>Dead letter</h2><table id="dlq"><thead><tr><th>id</th><th>queue</th><th>kind</th><th>err</th><th>action</th></tr></thead><tbody></tbody></table>
+<script>
+let tok = localStorage.getItem('conveyor_token') || '';
+function h(){let r={'Content-Type':'application/json'};if(tok)r['Authorization']='Bearer '+tok;return r;}
+async function seed(n){const q='default';await fetch('/v1/queues',{headers:h()}).catch(()=>{});for(let i=0;i<n;i++){await fetch('/v1/jobs',{method:'POST',headers:h(),body:JSON.stringify({queue:'default',kind:'demo',args:'{}',priority:0})});}}
+async function refresh(){
+ const r=await fetch('/v1/queues',{headers:h()});document.getElementById('status').textContent = r.ok?'':'auth error?';
+ if(!r.ok)return;const j=await r.json();let qs='';for(const q of (j.queues||[])){let d=[];for(const k in q.depthByState)d.push(k+':'+q.depthByState[k]);qs+=`<tr><td>${q.name}</td><td>${q.concurrency}</td><td>${q.rateLimitPerSec}</td><td>${d.join(' ')}</td></tr>`;}document.querySelector('#queues tbody').innerHTML=qs;
+ const jr=await fetch('/v1/jobs?limit=25',{headers:h()});const jj=await jr.json();let jb='';let dl='';for(const job of (jj.jobs||[])){if(job.state==='discarded'){dl+=`<tr><td>${job.id}</td><td>${job.queue}</td><td>${job.kind}</td><td></td><td><button onclick="retry(${job.id})">retry</button></td></tr>`;continue;}jb+=`<tr><td>${job.id}</td><td>${job.queue}</td><td>${job.kind}</td><td>${job.state}</td><td>${job.attempt}</td><td>${['available','scheduled','retryable'].includes(job.state)?`<button onclick="cancel(${job.id})">cancel</button>`:''}</td></tr>`;}document.querySelector('#jobs tbody').innerHTML=jb;document.querySelector('#dlq tbody').innerHTML=dl;
+}
+async function retry(id){await fetch(`/v1/jobs/${id}:retry`,{method:'POST',headers:h(),body:'{}'});refresh();}
+async function cancel(id){await fetch(`/v1/jobs/${id}:cancel`,{method:'POST',headers:h(),body:'{}'});refresh();}
+setInterval(refresh,2000);refresh();
+</script></body></html>

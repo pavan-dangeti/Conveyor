@@ -71,11 +71,11 @@ func do(t *testing.T, h http.Handler, method, path, body string) (int, string) {
 
 func TestHTTPGatewayEndToEnd(t *testing.T) {
 	_, h := setup(t)
-	code, resp := do(t, h, "POST", "/v1/jobs", `{"queue":"q1","kind":"email","args":"e30=","idempotencyKey":"k1","priority":3}`)
+	code, resp := do(t, h, "POST", "/v1/jobs", `{"queue":"q1","kind":"email","args":"{}","idempotencyKey":"k1","priority":3}`)
 	if code != 200 || !strings.Contains(resp, `"id"`) {
 		t.Fatalf("enqueue: %d %s", code, resp)
 	}
-	code, _ = do(t, h, "POST", "/v1/jobs", `{"queue":"q1","kind":"email","args":"e30=","idempotencyKey":"k1"}`)
+	code, _ = do(t, h, "POST", "/v1/jobs", `{"queue":"q1","kind":"email","args":"{}","idempotencyKey":"k1"}`)
 	if code != 200 {
 		t.Fatalf("idempotent enqueue: %d", code)
 	}
@@ -83,11 +83,11 @@ func TestHTTPGatewayEndToEnd(t *testing.T) {
 	if code != 200 || !strings.Contains(resp, "q1") {
 		t.Fatalf("queues: %d %s", code, resp)
 	}
-	code, resp = do(t, h, "POST", "/v1/cron", `{"queue":"q1","kind":"ping","args":"e30=","spec":"*/5 * * * *"}`)
+	code, resp = do(t, h, "POST", "/v1/cron", `{"queue":"q1","kind":"ping","args":"{}","spec":"*/5 * * * *"}`)
 	if code != 200 || !strings.Contains(resp, "nextRunAt") {
 		t.Fatalf("cron: %d %s", code, resp)
 	}
-	code, resp = do(t, h, "POST", "/v1/cron", `{"queue":"q1","kind":"ping","args":"e30=","spec":"not-a-cron"}`)
+	code, resp = do(t, h, "POST", "/v1/cron", `{"queue":"q1","kind":"ping","args":"{}","spec":"not-a-cron"}`)
 	if code != 400 {
 		t.Fatalf("bad cron: %d %s", code, resp)
 	}

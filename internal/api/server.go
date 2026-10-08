@@ -33,7 +33,7 @@ func (s *Server) Enqueue(ctx context.Context, r *conveyorv1.EnqueueRequest) (*co
 	if len(r.Args) > maxArgsBytes {
 		return nil, status.Error(codes.InvalidArgument, "args too large")
 	}
-	if len(r.Args) > 0 && !json.Valid(r.Args) {
+	if len(r.Args) > 0 && !json.Valid([]byte(r.Args)) {
 		return nil, status.Error(codes.InvalidArgument, "args must be valid JSON")
 	}
 	if r.MaxAttempts > 64 {
@@ -47,7 +47,7 @@ func (s *Server) Enqueue(ctx context.Context, r *conveyorv1.EnqueueRequest) (*co
 		key = &r.IdempotencyKey
 	}
 	id, deduped, err := queue.Enqueue(ctx, s.db, queue.EnqueueParams{
-		Queue: r.Queue, Kind: r.Kind, Args: r.Args, Priority: int(r.Priority),
+		Queue: r.Queue, Kind: r.Kind, Args: json.RawMessage(r.Args), Priority: int(r.Priority),
 		MaxAttempts: int(r.MaxAttempts), Delay: time.Duration(r.DelaySeconds) * time.Second,
 		IdempotencyKey: key,
 	})
@@ -176,7 +176,7 @@ func (s *Server) CreateCron(ctx context.Context, r *conveyorv1.CreateCronRequest
 	var id int64
 	err = s.db.QueryRowContext(ctx,
 		`INSERT INTO cron_schedules (queue, kind, args, spec, next_run_at) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-		r.Queue, r.Kind, r.Args, r.Spec, next).Scan(&id)
+		r.Queue, r.Kind, []byte(r.Args), r.Spec, next).Scan(&id)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "create cron: %v", err)
 	}

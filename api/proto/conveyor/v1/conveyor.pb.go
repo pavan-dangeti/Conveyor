@@ -27,7 +27,7 @@ type Job struct {
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Queue         string                 `protobuf:"bytes,2,opt,name=queue,proto3" json:"queue,omitempty"`
 	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
-	Args          []byte                 `protobuf:"bytes,4,opt,name=args,proto3" json:"args,omitempty"`
+	Args          string                 `protobuf:"bytes,4,opt,name=args,proto3" json:"args,omitempty"`
 	State         string                 `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"`
 	Priority      int32                  `protobuf:"varint,6,opt,name=priority,proto3" json:"priority,omitempty"`
 	Attempt       int32                  `protobuf:"varint,7,opt,name=attempt,proto3" json:"attempt,omitempty"`
@@ -90,11 +90,11 @@ func (x *Job) GetKind() string {
 	return ""
 }
 
-func (x *Job) GetArgs() []byte {
+func (x *Job) GetArgs() string {
 	if x != nil {
 		return x.Args
 	}
-	return nil
+	return ""
 }
 
 func (x *Job) GetState() string {
@@ -150,7 +150,7 @@ type EnqueueRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Queue          string                 `protobuf:"bytes,1,opt,name=queue,proto3" json:"queue,omitempty"`
 	Kind           string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	Args           []byte                 `protobuf:"bytes,3,opt,name=args,proto3" json:"args,omitempty"`
+	Args           string                 `protobuf:"bytes,3,opt,name=args,proto3" json:"args,omitempty"`
 	Priority       int32                  `protobuf:"varint,4,opt,name=priority,proto3" json:"priority,omitempty"`
 	MaxAttempts    int32                  `protobuf:"varint,5,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
@@ -203,11 +203,11 @@ func (x *EnqueueRequest) GetKind() string {
 	return ""
 }
 
-func (x *EnqueueRequest) GetArgs() []byte {
+func (x *EnqueueRequest) GetArgs() string {
 	if x != nil {
 		return x.Args
 	}
-	return nil
+	return ""
 }
 
 func (x *EnqueueRequest) GetPriority() int32 {
@@ -723,7 +723,7 @@ type CronSchedule struct {
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
 	Queue         string                 `protobuf:"bytes,2,opt,name=queue,proto3" json:"queue,omitempty"`
 	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
-	Args          []byte                 `protobuf:"bytes,4,opt,name=args,proto3" json:"args,omitempty"`
+	Args          string                 `protobuf:"bytes,4,opt,name=args,proto3" json:"args,omitempty"`
 	Spec          string                 `protobuf:"bytes,5,opt,name=spec,proto3" json:"spec,omitempty"`
 	NextRunAt     string                 `protobuf:"bytes,6,opt,name=next_run_at,json=nextRunAt,proto3" json:"next_run_at,omitempty"`
 	Enabled       bool                   `protobuf:"varint,7,opt,name=enabled,proto3" json:"enabled,omitempty"`
@@ -782,11 +782,11 @@ func (x *CronSchedule) GetKind() string {
 	return ""
 }
 
-func (x *CronSchedule) GetArgs() []byte {
+func (x *CronSchedule) GetArgs() string {
 	if x != nil {
 		return x.Args
 	}
-	return nil
+	return ""
 }
 
 func (x *CronSchedule) GetSpec() string {
@@ -814,7 +814,7 @@ type CreateCronRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Queue         string                 `protobuf:"bytes,1,opt,name=queue,proto3" json:"queue,omitempty"`
 	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	Args          []byte                 `protobuf:"bytes,3,opt,name=args,proto3" json:"args,omitempty"`
+	Args          string                 `protobuf:"bytes,3,opt,name=args,proto3" json:"args,omitempty"`
 	Spec          string                 `protobuf:"bytes,4,opt,name=spec,proto3" json:"spec,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -864,11 +864,11 @@ func (x *CreateCronRequest) GetKind() string {
 	return ""
 }
 
-func (x *CreateCronRequest) GetArgs() []byte {
+func (x *CreateCronRequest) GetArgs() string {
 	if x != nil {
 		return x.Args
 	}
-	return nil
+	return ""
 }
 
 func (x *CreateCronRequest) GetSpec() string {
@@ -887,7 +887,7 @@ const file_conveyor_v1_conveyor_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05queue\x18\x02 \x01(\tR\x05queue\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x12\n" +
-	"\x04args\x18\x04 \x01(\fR\x04args\x12\x14\n" +
+	"\x04args\x18\x04 \x01(\tR\x04args\x12\x14\n" +
 	"\x05state\x18\x05 \x01(\tR\x05state\x12\x1a\n" +
 	"\bpriority\x18\x06 \x01(\x05R\bpriority\x12\x18\n" +
 	"\aattempt\x18\a \x01(\x05R\aattempt\x12!\n" +
@@ -900,7 +900,7 @@ const file_conveyor_v1_conveyor_proto_rawDesc = "" +
 	"\x0eEnqueueRequest\x12\x14\n" +
 	"\x05queue\x18\x01 \x01(\tR\x05queue\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
-	"\x04args\x18\x03 \x01(\fR\x04args\x12\x1a\n" +
+	"\x04args\x18\x03 \x01(\tR\x04args\x12\x1a\n" +
 	"\bpriority\x18\x04 \x01(\x05R\bpriority\x12!\n" +
 	"\fmax_attempts\x18\x05 \x01(\x05R\vmaxAttempts\x12'\n" +
 	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12#\n" +
@@ -937,14 +937,14 @@ const file_conveyor_v1_conveyor_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05queue\x18\x02 \x01(\tR\x05queue\x12\x12\n" +
 	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x12\n" +
-	"\x04args\x18\x04 \x01(\fR\x04args\x12\x12\n" +
+	"\x04args\x18\x04 \x01(\tR\x04args\x12\x12\n" +
 	"\x04spec\x18\x05 \x01(\tR\x04spec\x12\x1e\n" +
 	"\vnext_run_at\x18\x06 \x01(\tR\tnextRunAt\x12\x18\n" +
 	"\aenabled\x18\a \x01(\bR\aenabled\"e\n" +
 	"\x11CreateCronRequest\x12\x14\n" +
 	"\x05queue\x18\x01 \x01(\tR\x05queue\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
-	"\x04args\x18\x03 \x01(\fR\x04args\x12\x12\n" +
+	"\x04args\x18\x03 \x01(\tR\x04args\x12\x12\n" +
 	"\x04spec\x18\x04 \x01(\tR\x04spec2\xa1\x05\n" +
 	"\bConveyor\x12Y\n" +
 	"\aEnqueue\x12\x1b.conveyor.v1.EnqueueRequest\x1a\x1c.conveyor.v1.EnqueueResponse\"\x13\x82\xd3\xe4\x93\x02\r:\x01*\"\b/v1/jobs\x12M\n" +
