@@ -18,17 +18,18 @@ import (
 type Handler func(ctx context.Context, job queue.Job) error
 
 type Worker struct {
-	db       *sql.DB
-	dsn      string
-	queue    string
-	owner    string
-	lease    time.Duration
-	batch    int
-	pollMin  time.Duration
-	pollMax  time.Duration
-	budget   time.Duration
-	logger   *slog.Logger
-	handlers map[string]Handler
+	db             *sql.DB
+	dsn            string
+	queue          string
+	owner          string
+	lease          time.Duration
+	batch          int
+	handlerCommits bool
+	pollMin        time.Duration
+	pollMax        time.Duration
+	budget         time.Duration
+	logger         *slog.Logger
+	handlers       map[string]Handler
 }
 
 type Option func(*Worker)
@@ -37,6 +38,7 @@ func WithLease(d time.Duration) Option  { return func(w *Worker) { w.lease = d }
 func WithBatch(n int) Option            { return func(w *Worker) { w.batch = n } }
 func WithBudget(d time.Duration) Option { return func(w *Worker) { w.budget = d } }
 func WithLogger(l *slog.Logger) Option  { return func(w *Worker) { w.logger = l } }
+func WithHandlerCommitsOutcome() Option { return func(w *Worker) { w.handlerCommits = true } }
 func WithPoll(min, max time.Duration) Option {
 	return func(w *Worker) { w.pollMin, w.pollMax = min, max }
 }
@@ -127,13 +129,18 @@ func (w *Worker) execute(ctx context.Context, j queue.Job, h Handler) {
 		return
 	}
 	if err != nil {
+		if w.handlerCommits {
+			return
+		}
 		if ferr := queue.Fail(context.Background(), w.db, j.ID, w.owner, j.LeaseVersion, err.Error(), j.Attempt, j.MaxAttempts); ferr != nil {
 			w.logger.Error("fail", "err", ferr)
 		}
 		return
 	}
-	if cerr := queue.Complete(context.Background(), w.db, j.ID, w.owner, j.LeaseVersion); cerr != nil {
-		w.logger.Error("complete", "err", cerr)
+	if !w.handlerCommits {
+		if cerr := queue.Complete(context.Background(), w.db, j.ID, w.owner, j.LeaseVersion); cerr != nil {
+			w.logger.Error("complete", "err", cerr)
+		}
 	}
 }
 
