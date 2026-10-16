@@ -26,6 +26,21 @@ jobs:
       - name: govulncheck
         uses: golang/govulncheck-action@v1
 
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: validate compose files
+        run: |
+          docker compose -f docker-compose.yml config
+          docker compose -f compose-demo.yml config
+      - name: start postgres
+        run: docker compose -f docker-compose.yml up --wait -d
+      - name: smoke test postgres
+        run: |
+          docker compose -f docker-compose.yml exec -T postgres \
+            psql -U conveyor -d conveyor -c "SELECT 1"
+
   tlc:
     runs-on: ubuntu-latest
     steps:
