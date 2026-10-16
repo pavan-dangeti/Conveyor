@@ -22,11 +22,17 @@ service Conveyor {
   rpc RetryJob(RetryJobRequest) returns (StatusResponse) {
     option (google.api.http) = { post: "/v1/jobs/{id}:retry" body: "*" };
   }
+  rpc DiscardJob(DiscardJobRequest) returns (StatusResponse) {
+    option (google.api.http) = { post: "/v1/jobs/{id}:discard" body: "*" };
+  }
   rpc ListQueues(ListQueuesRequest) returns (ListQueuesResponse) {
     option (google.api.http) = { get: "/v1/queues" };
   }
   rpc CreateCron(CreateCronRequest) returns (CronSchedule) {
     option (google.api.http) = { post: "/v1/cron" body: "*" };
+  }
+  rpc GetStats(GetStatsRequest) returns (Stats) {
+    option (google.api.http) = { get: "/v1/stats" };
   }
 }
 
@@ -42,6 +48,9 @@ message Job {
   string run_at = 9;
   int64 lease_version = 10;
   string created_at = 11;
+  string error = 12;
+  string lease_owner = 13;
+  repeated int64 depends_on = 14;
 }
 
 message EnqueueRequest {
@@ -52,6 +61,10 @@ message EnqueueRequest {
   int32 max_attempts = 5;
   string idempotency_key = 6;
   int32 delay_seconds = 7;
+  // RFC 3339; overrides delay_seconds when set.
+  string run_at = 8;
+  // Workflow edges: this job runs only after every listed job completes.
+  repeated int64 depends_on = 9;
 }
 message EnqueueResponse { int64 id = 1; bool deduped = 2; }
 
@@ -64,6 +77,7 @@ message ListJobsRequest {
 message ListJobsResponse { repeated Job jobs = 1; }
 message CancelJobRequest { int64 id = 1; }
 message RetryJobRequest { int64 id = 1; }
+message DiscardJobRequest { int64 id = 1; }
 message StatusResponse { bool ok = 1; }
 message ListQueuesRequest {}
 message QueueInfo {
@@ -87,4 +101,19 @@ message CreateCronRequest {
   string kind = 2;
   string args = 3;
   string spec = 4;
+}
+
+message GetStatsRequest {
+  // Window for throughput and latency, default 60.
+  int32 window_seconds = 1;
+}
+message Stats {
+  int32 window_seconds = 1;
+  double completed_per_sec = 2;
+  double start_latency_p50_ms = 3;
+  double start_latency_p95_ms = 4;
+  double start_latency_p99_ms = 5;
+  int64 retries = 6;
+  int64 dead_letter = 7;
+  int64 lease_expirations = 8;
 }
