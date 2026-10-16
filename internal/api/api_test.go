@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -99,4 +100,45 @@ func TestHTTPGatewayEndToEnd(t *testing.T) {
 	if code != 400 && code != 500 {
 		t.Fatalf("bad args: %d", code)
 	}
+}
+
+// TestOperatorAndStatsEndpoints covers the operator RPCs added with the
+// Phase-7 WIP: run_at forwarding, manual discard, and the stats RPC.
+func TestOperatorAndStatsEndpoints(t *testing.T) {
+	_, h := setup(t)
+	code, resp := do(t, h, "POST", "/v1/jobs",
+		`{"queue":"q1","kind":"email","args":"{}","runAt":"2030-01-01T00:00:00Z"}`)
+	if code != 200 {
+		t.Fatalf("enqueue: %d %s", code, resp)
+	}
+	id := extractID(t, resp)
+	code, resp = do(t, h, "GET", fmt.Sprintf("/v1/jobs/%d", id), "")
+	if code != 200 || !strings.Contains(resp, "2030-01-01T00:00:00Z") {
+		t.Fatalf("run_at not forwarded: %d %s", code, resp)
+	}
+	code, resp = do(t, h, "POST", fmt.Sprintf("/v1/jobs/%d:discard", id), `{}`)
+	if code != 200 {
+		t.Fatalf("discard: %d %s", code, resp)
+	}
+	code, resp = do(t, h, "GET", fmt.Sprintf("/v1/jobs/%d", id), "")
+	if code != 200 || !strings.Contains(resp, `"state":"discarded"`) {
+		t.Fatalf("discarded job: %d %s", code, resp)
+	}
+	code, resp = do(t, h, "GET", "/v1/stats?window_seconds=60", "")
+	if code != 200 || !strings.Contains(resp, "completedPerSec") {
+		t.Fatalf("stats: %d %s", code, resp)
+	}
+}
+
+func extractID(t *testing.T, resp string) int64 {
+	t.Helper()
+	i := strings.Index(resp, `"id":`)
+	if i < 0 {
+		t.Fatalf("no job id in %q", resp)
+	}
+	var id int64
+	if _, err := fmt.Sscanf(resp[i:], `"id":%d`, &id); err != nil {
+		t.Fatalf("parse job id: %v", err)
+	}
+	return id
 }

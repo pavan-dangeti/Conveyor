@@ -13,6 +13,7 @@ import (
 
 	_ "embed"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -25,6 +26,7 @@ import (
 	conveyorv1 "github.com/pavan-dangeti/Conveyor/api/proto/conveyor/v1"
 	"github.com/pavan-dangeti/Conveyor/internal/api"
 	"github.com/pavan-dangeti/Conveyor/internal/maintenance"
+	"github.com/pavan-dangeti/Conveyor/internal/metrics"
 	"github.com/pavan-dangeti/Conveyor/internal/migrate"
 	"github.com/pavan-dangeti/Conveyor/internal/store"
 	"github.com/pavan-dangeti/Conveyor/internal/ui"
@@ -46,6 +48,11 @@ func main() {
 	defer func() { _ = db.Close() }()
 	if err := migrate.Up(context.Background(), db); err != nil {
 		logger.Error("migrate", "err", err)
+		os.Exit(1)
+	}
+	dbMetrics := metrics.NewDBCollector(db)
+	if err := prometheus.Register(dbMetrics); err != nil {
+		logger.Error("register db metrics", "err", err)
 		os.Exit(1)
 	}
 	if _, err := db.Exec(`INSERT INTO queues(name) VALUES ('default') ON CONFLICT DO NOTHING`); err != nil {

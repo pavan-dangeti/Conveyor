@@ -16,6 +16,48 @@
       "type": "stat",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
       "targets": [{"expr": "conveyor_jobs_running_expired_lease"}]
+    },
+    {
+      "id": 3,
+      "title": "Leader",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "targets": [{"expr": "conveyor_is_leader"}]
+    },
+    {
+      "id": 4,
+      "title": "Leader changes",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [{"expr": "conveyor_leader_changes_total"}]
+    },
+    {
+      "id": 5,
+      "title": "Job duration by kind",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [{"expr": "conveyor_job_duration_seconds_bucket", "legendFormat": "{{kind}} {{outcome}}"}]
+    },
+    {
+      "id": 6,
+      "title": "RPC requests by method and status",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [{"expr": "conveyor_rpc_requests_total", "legendFormat": "{{method}} {{code}}"}]
+    },
+    {
+      "id": 7,
+      "title": "Transitions by event",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "targets": [{"expr": "conveyor_transitions_total", "legendFormat": "{{event}}"}]
+    },
+    {
+      "id": 8,
+      "title": "RPC latency",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [{"expr": "conveyor_rpc_duration_seconds_bucket", "legendFormat": "{{method}}"}]
     }
   ]
 }

@@ -24,8 +24,10 @@ const (
 	Conveyor_ListJobs_FullMethodName   = "/conveyor.v1.Conveyor/ListJobs"
 	Conveyor_CancelJob_FullMethodName  = "/conveyor.v1.Conveyor/CancelJob"
 	Conveyor_RetryJob_FullMethodName   = "/conveyor.v1.Conveyor/RetryJob"
+	Conveyor_DiscardJob_FullMethodName = "/conveyor.v1.Conveyor/DiscardJob"
 	Conveyor_ListQueues_FullMethodName = "/conveyor.v1.Conveyor/ListQueues"
 	Conveyor_CreateCron_FullMethodName = "/conveyor.v1.Conveyor/CreateCron"
+	Conveyor_GetStats_FullMethodName   = "/conveyor.v1.Conveyor/GetStats"
 )
 
 // ConveyorClient is the client API for Conveyor service.
@@ -37,8 +39,10 @@ type ConveyorClient interface {
 	ListJobs(ctx context.Context, in *ListJobsRequest, opts ...grpc.CallOption) (*ListJobsResponse, error)
 	CancelJob(ctx context.Context, in *CancelJobRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	RetryJob(ctx context.Context, in *RetryJobRequest, opts ...grpc.CallOption) (*StatusResponse, error)
+	DiscardJob(ctx context.Context, in *DiscardJobRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	ListQueues(ctx context.Context, in *ListQueuesRequest, opts ...grpc.CallOption) (*ListQueuesResponse, error)
 	CreateCron(ctx context.Context, in *CreateCronRequest, opts ...grpc.CallOption) (*CronSchedule, error)
+	GetStats(ctx context.Context, in *GetStatsRequest, opts ...grpc.CallOption) (*Stats, error)
 }
 
 type conveyorClient struct {
@@ -99,6 +103,16 @@ func (c *conveyorClient) RetryJob(ctx context.Context, in *RetryJobRequest, opts
 	return out, nil
 }
 
+func (c *conveyorClient) DiscardJob(ctx context.Context, in *DiscardJobRequest, opts ...grpc.CallOption) (*StatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatusResponse)
+	err := c.cc.Invoke(ctx, Conveyor_DiscardJob_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *conveyorClient) ListQueues(ctx context.Context, in *ListQueuesRequest, opts ...grpc.CallOption) (*ListQueuesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListQueuesResponse)
@@ -119,6 +133,16 @@ func (c *conveyorClient) CreateCron(ctx context.Context, in *CreateCronRequest, 
 	return out, nil
 }
 
+func (c *conveyorClient) GetStats(ctx context.Context, in *GetStatsRequest, opts ...grpc.CallOption) (*Stats, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Stats)
+	err := c.cc.Invoke(ctx, Conveyor_GetStats_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ConveyorServer is the server API for Conveyor service.
 // All implementations must embed UnimplementedConveyorServer
 // for forward compatibility.
@@ -128,8 +152,10 @@ type ConveyorServer interface {
 	ListJobs(context.Context, *ListJobsRequest) (*ListJobsResponse, error)
 	CancelJob(context.Context, *CancelJobRequest) (*StatusResponse, error)
 	RetryJob(context.Context, *RetryJobRequest) (*StatusResponse, error)
+	DiscardJob(context.Context, *DiscardJobRequest) (*StatusResponse, error)
 	ListQueues(context.Context, *ListQueuesRequest) (*ListQueuesResponse, error)
 	CreateCron(context.Context, *CreateCronRequest) (*CronSchedule, error)
+	GetStats(context.Context, *GetStatsRequest) (*Stats, error)
 	mustEmbedUnimplementedConveyorServer()
 }
 
@@ -155,11 +181,17 @@ func (UnimplementedConveyorServer) CancelJob(context.Context, *CancelJobRequest)
 func (UnimplementedConveyorServer) RetryJob(context.Context, *RetryJobRequest) (*StatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RetryJob not implemented")
 }
+func (UnimplementedConveyorServer) DiscardJob(context.Context, *DiscardJobRequest) (*StatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DiscardJob not implemented")
+}
 func (UnimplementedConveyorServer) ListQueues(context.Context, *ListQueuesRequest) (*ListQueuesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListQueues not implemented")
 }
 func (UnimplementedConveyorServer) CreateCron(context.Context, *CreateCronRequest) (*CronSchedule, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateCron not implemented")
+}
+func (UnimplementedConveyorServer) GetStats(context.Context, *GetStatsRequest) (*Stats, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetStats not implemented")
 }
 func (UnimplementedConveyorServer) mustEmbedUnimplementedConveyorServer() {}
 func (UnimplementedConveyorServer) testEmbeddedByValue()                  {}
@@ -272,6 +304,24 @@ func _Conveyor_RetryJob_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Conveyor_DiscardJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DiscardJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConveyorServer).DiscardJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Conveyor_DiscardJob_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConveyorServer).DiscardJob(ctx, req.(*DiscardJobRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Conveyor_ListQueues_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListQueuesRequest)
 	if err := dec(in); err != nil {
@@ -308,6 +358,24 @@ func _Conveyor_CreateCron_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Conveyor_GetStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetStatsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConveyorServer).GetStats(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Conveyor_GetStats_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConveyorServer).GetStats(ctx, req.(*GetStatsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Conveyor_ServiceDesc is the grpc.ServiceDesc for Conveyor service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -336,12 +404,20 @@ var Conveyor_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Conveyor_RetryJob_Handler,
 		},
 		{
+			MethodName: "DiscardJob",
+			Handler:    _Conveyor_DiscardJob_Handler,
+		},
+		{
 			MethodName: "ListQueues",
 			Handler:    _Conveyor_ListQueues_Handler,
 		},
 		{
 			MethodName: "CreateCron",
 			Handler:    _Conveyor_CreateCron_Handler,
+		},
+		{
+			MethodName: "GetStats",
+			Handler:    _Conveyor_GetStats_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
