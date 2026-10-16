@@ -35,6 +35,9 @@ type Job struct {
 	RunAt         string                 `protobuf:"bytes,9,opt,name=run_at,json=runAt,proto3" json:"run_at,omitempty"`
 	LeaseVersion  int64                  `protobuf:"varint,10,opt,name=lease_version,json=leaseVersion,proto3" json:"lease_version,omitempty"`
 	CreatedAt     string                 `protobuf:"bytes,11,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Error         string                 `protobuf:"bytes,12,opt,name=error,proto3" json:"error,omitempty"`
+	LeaseOwner    string                 `protobuf:"bytes,13,opt,name=lease_owner,json=leaseOwner,proto3" json:"lease_owner,omitempty"`
+	DependsOn     []int64                `protobuf:"varint,14,rep,packed,name=depends_on,json=dependsOn,proto3" json:"depends_on,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -146,6 +149,27 @@ func (x *Job) GetCreatedAt() string {
 	return ""
 }
 
+func (x *Job) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *Job) GetLeaseOwner() string {
+	if x != nil {
+		return x.LeaseOwner
+	}
+	return ""
+}
+
+func (x *Job) GetDependsOn() []int64 {
+	if x != nil {
+		return x.DependsOn
+	}
+	return nil
+}
+
 type EnqueueRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Queue          string                 `protobuf:"bytes,1,opt,name=queue,proto3" json:"queue,omitempty"`
@@ -155,8 +179,12 @@ type EnqueueRequest struct {
 	MaxAttempts    int32                  `protobuf:"varint,5,opt,name=max_attempts,json=maxAttempts,proto3" json:"max_attempts,omitempty"`
 	IdempotencyKey string                 `protobuf:"bytes,6,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
 	DelaySeconds   int32                  `protobuf:"varint,7,opt,name=delay_seconds,json=delaySeconds,proto3" json:"delay_seconds,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// RFC 3339; overrides delay_seconds when set.
+	RunAt string `protobuf:"bytes,8,opt,name=run_at,json=runAt,proto3" json:"run_at,omitempty"`
+	// Workflow edges: this job runs only after every listed job completes.
+	DependsOn     []int64 `protobuf:"varint,9,rep,packed,name=depends_on,json=dependsOn,proto3" json:"depends_on,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *EnqueueRequest) Reset() {
@@ -236,6 +264,20 @@ func (x *EnqueueRequest) GetDelaySeconds() int32 {
 		return x.DelaySeconds
 	}
 	return 0
+}
+
+func (x *EnqueueRequest) GetRunAt() string {
+	if x != nil {
+		return x.RunAt
+	}
+	return ""
+}
+
+func (x *EnqueueRequest) GetDependsOn() []int64 {
+	if x != nil {
+		return x.DependsOn
+	}
+	return nil
 }
 
 type EnqueueResponse struct {
@@ -526,6 +568,50 @@ func (x *RetryJobRequest) GetId() int64 {
 	return 0
 }
 
+type DiscardJobRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiscardJobRequest) Reset() {
+	*x = DiscardJobRequest{}
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscardJobRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscardJobRequest) ProtoMessage() {}
+
+func (x *DiscardJobRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscardJobRequest.ProtoReflect.Descriptor instead.
+func (*DiscardJobRequest) Descriptor() ([]byte, []int) {
+	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *DiscardJobRequest) GetId() int64 {
+	if x != nil {
+		return x.Id
+	}
+	return 0
+}
+
 type StatusResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
@@ -535,7 +621,7 @@ type StatusResponse struct {
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_conveyor_v1_conveyor_proto_msgTypes[8]
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -547,7 +633,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conveyor_v1_conveyor_proto_msgTypes[8]
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -560,7 +646,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{8}
+	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *StatusResponse) GetOk() bool {
@@ -578,7 +664,7 @@ type ListQueuesRequest struct {
 
 func (x *ListQueuesRequest) Reset() {
 	*x = ListQueuesRequest{}
-	mi := &file_conveyor_v1_conveyor_proto_msgTypes[9]
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -590,7 +676,7 @@ func (x *ListQueuesRequest) String() string {
 func (*ListQueuesRequest) ProtoMessage() {}
 
 func (x *ListQueuesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conveyor_v1_conveyor_proto_msgTypes[9]
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -603,7 +689,7 @@ func (x *ListQueuesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListQueuesRequest.ProtoReflect.Descriptor instead.
 func (*ListQueuesRequest) Descriptor() ([]byte, []int) {
-	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{9}
+	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{10}
 }
 
 type QueueInfo struct {
@@ -618,7 +704,7 @@ type QueueInfo struct {
 
 func (x *QueueInfo) Reset() {
 	*x = QueueInfo{}
-	mi := &file_conveyor_v1_conveyor_proto_msgTypes[10]
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -630,7 +716,7 @@ func (x *QueueInfo) String() string {
 func (*QueueInfo) ProtoMessage() {}
 
 func (x *QueueInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_conveyor_v1_conveyor_proto_msgTypes[10]
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -643,7 +729,7 @@ func (x *QueueInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueueInfo.ProtoReflect.Descriptor instead.
 func (*QueueInfo) Descriptor() ([]byte, []int) {
-	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{10}
+	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *QueueInfo) GetName() string {
@@ -683,7 +769,7 @@ type ListQueuesResponse struct {
 
 func (x *ListQueuesResponse) Reset() {
 	*x = ListQueuesResponse{}
-	mi := &file_conveyor_v1_conveyor_proto_msgTypes[11]
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -695,7 +781,7 @@ func (x *ListQueuesResponse) String() string {
 func (*ListQueuesResponse) ProtoMessage() {}
 
 func (x *ListQueuesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conveyor_v1_conveyor_proto_msgTypes[11]
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -708,7 +794,7 @@ func (x *ListQueuesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListQueuesResponse.ProtoReflect.Descriptor instead.
 func (*ListQueuesResponse) Descriptor() ([]byte, []int) {
-	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{11}
+	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListQueuesResponse) GetQueues() []*QueueInfo {
@@ -733,7 +819,7 @@ type CronSchedule struct {
 
 func (x *CronSchedule) Reset() {
 	*x = CronSchedule{}
-	mi := &file_conveyor_v1_conveyor_proto_msgTypes[12]
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -745,7 +831,7 @@ func (x *CronSchedule) String() string {
 func (*CronSchedule) ProtoMessage() {}
 
 func (x *CronSchedule) ProtoReflect() protoreflect.Message {
-	mi := &file_conveyor_v1_conveyor_proto_msgTypes[12]
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -758,7 +844,7 @@ func (x *CronSchedule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CronSchedule.ProtoReflect.Descriptor instead.
 func (*CronSchedule) Descriptor() ([]byte, []int) {
-	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{12}
+	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CronSchedule) GetId() int64 {
@@ -822,7 +908,7 @@ type CreateCronRequest struct {
 
 func (x *CreateCronRequest) Reset() {
 	*x = CreateCronRequest{}
-	mi := &file_conveyor_v1_conveyor_proto_msgTypes[13]
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -834,7 +920,7 @@ func (x *CreateCronRequest) String() string {
 func (*CreateCronRequest) ProtoMessage() {}
 
 func (x *CreateCronRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_conveyor_v1_conveyor_proto_msgTypes[13]
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -847,7 +933,7 @@ func (x *CreateCronRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateCronRequest.ProtoReflect.Descriptor instead.
 func (*CreateCronRequest) Descriptor() ([]byte, []int) {
-	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{13}
+	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CreateCronRequest) GetQueue() string {
@@ -878,11 +964,156 @@ func (x *CreateCronRequest) GetSpec() string {
 	return ""
 }
 
+type GetStatsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Window for throughput and latency, default 60.
+	WindowSeconds int32 `protobuf:"varint,1,opt,name=window_seconds,json=windowSeconds,proto3" json:"window_seconds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetStatsRequest) Reset() {
+	*x = GetStatsRequest{}
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetStatsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetStatsRequest) ProtoMessage() {}
+
+func (x *GetStatsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetStatsRequest.ProtoReflect.Descriptor instead.
+func (*GetStatsRequest) Descriptor() ([]byte, []int) {
+	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetStatsRequest) GetWindowSeconds() int32 {
+	if x != nil {
+		return x.WindowSeconds
+	}
+	return 0
+}
+
+type Stats struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	WindowSeconds     int32                  `protobuf:"varint,1,opt,name=window_seconds,json=windowSeconds,proto3" json:"window_seconds,omitempty"`
+	CompletedPerSec   float64                `protobuf:"fixed64,2,opt,name=completed_per_sec,json=completedPerSec,proto3" json:"completed_per_sec,omitempty"`
+	StartLatencyP50Ms float64                `protobuf:"fixed64,3,opt,name=start_latency_p50_ms,json=startLatencyP50Ms,proto3" json:"start_latency_p50_ms,omitempty"`
+	StartLatencyP95Ms float64                `protobuf:"fixed64,4,opt,name=start_latency_p95_ms,json=startLatencyP95Ms,proto3" json:"start_latency_p95_ms,omitempty"`
+	StartLatencyP99Ms float64                `protobuf:"fixed64,5,opt,name=start_latency_p99_ms,json=startLatencyP99Ms,proto3" json:"start_latency_p99_ms,omitempty"`
+	Retries           int64                  `protobuf:"varint,6,opt,name=retries,proto3" json:"retries,omitempty"`
+	DeadLetter        int64                  `protobuf:"varint,7,opt,name=dead_letter,json=deadLetter,proto3" json:"dead_letter,omitempty"`
+	LeaseExpirations  int64                  `protobuf:"varint,8,opt,name=lease_expirations,json=leaseExpirations,proto3" json:"lease_expirations,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *Stats) Reset() {
+	*x = Stats{}
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Stats) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Stats) ProtoMessage() {}
+
+func (x *Stats) ProtoReflect() protoreflect.Message {
+	mi := &file_conveyor_v1_conveyor_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Stats.ProtoReflect.Descriptor instead.
+func (*Stats) Descriptor() ([]byte, []int) {
+	return file_conveyor_v1_conveyor_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *Stats) GetWindowSeconds() int32 {
+	if x != nil {
+		return x.WindowSeconds
+	}
+	return 0
+}
+
+func (x *Stats) GetCompletedPerSec() float64 {
+	if x != nil {
+		return x.CompletedPerSec
+	}
+	return 0
+}
+
+func (x *Stats) GetStartLatencyP50Ms() float64 {
+	if x != nil {
+		return x.StartLatencyP50Ms
+	}
+	return 0
+}
+
+func (x *Stats) GetStartLatencyP95Ms() float64 {
+	if x != nil {
+		return x.StartLatencyP95Ms
+	}
+	return 0
+}
+
+func (x *Stats) GetStartLatencyP99Ms() float64 {
+	if x != nil {
+		return x.StartLatencyP99Ms
+	}
+	return 0
+}
+
+func (x *Stats) GetRetries() int64 {
+	if x != nil {
+		return x.Retries
+	}
+	return 0
+}
+
+func (x *Stats) GetDeadLetter() int64 {
+	if x != nil {
+		return x.DeadLetter
+	}
+	return 0
+}
+
+func (x *Stats) GetLeaseExpirations() int64 {
+	if x != nil {
+		return x.LeaseExpirations
+	}
+	return 0
+}
+
 var File_conveyor_v1_conveyor_proto protoreflect.FileDescriptor
 
 const file_conveyor_v1_conveyor_proto_rawDesc = "" +
 	"\n" +
-	"\x1aconveyor/v1/conveyor.proto\x12\vconveyor.v1\x1a\x1cgoogle/api/annotations.proto\"\x9d\x02\n" +
+	"\x1aconveyor/v1/conveyor.proto\x12\vconveyor.v1\x1a\x1cgoogle/api/annotations.proto\"\xf3\x02\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05queue\x18\x02 \x01(\tR\x05queue\x12\x12\n" +
@@ -896,7 +1127,12 @@ const file_conveyor_v1_conveyor_proto_rawDesc = "" +
 	"\rlease_version\x18\n" +
 	" \x01(\x03R\fleaseVersion\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\v \x01(\tR\tcreatedAt\"\xdb\x01\n" +
+	"created_at\x18\v \x01(\tR\tcreatedAt\x12\x14\n" +
+	"\x05error\x18\f \x01(\tR\x05error\x12\x1f\n" +
+	"\vlease_owner\x18\r \x01(\tR\n" +
+	"leaseOwner\x12\x1d\n" +
+	"\n" +
+	"depends_on\x18\x0e \x03(\x03R\tdependsOn\"\x91\x02\n" +
 	"\x0eEnqueueRequest\x12\x14\n" +
 	"\x05queue\x18\x01 \x01(\tR\x05queue\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
@@ -904,7 +1140,10 @@ const file_conveyor_v1_conveyor_proto_rawDesc = "" +
 	"\bpriority\x18\x04 \x01(\x05R\bpriority\x12!\n" +
 	"\fmax_attempts\x18\x05 \x01(\x05R\vmaxAttempts\x12'\n" +
 	"\x0fidempotency_key\x18\x06 \x01(\tR\x0eidempotencyKey\x12#\n" +
-	"\rdelay_seconds\x18\a \x01(\x05R\fdelaySeconds\";\n" +
+	"\rdelay_seconds\x18\a \x01(\x05R\fdelaySeconds\x12\x15\n" +
+	"\x06run_at\x18\b \x01(\tR\x05runAt\x12\x1d\n" +
+	"\n" +
+	"depends_on\x18\t \x03(\x03R\tdependsOn\";\n" +
 	"\x0fEnqueueResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x18\n" +
 	"\adeduped\x18\x02 \x01(\bR\adeduped\"\x1f\n" +
@@ -919,6 +1158,8 @@ const file_conveyor_v1_conveyor_proto_rawDesc = "" +
 	"\x10CancelJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\"!\n" +
 	"\x0fRetryJobRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\"#\n" +
+	"\x11DiscardJobRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\" \n" +
 	"\x0eStatusResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\"\x13\n" +
@@ -945,19 +1186,34 @@ const file_conveyor_v1_conveyor_proto_rawDesc = "" +
 	"\x05queue\x18\x01 \x01(\tR\x05queue\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
 	"\x04args\x18\x03 \x01(\tR\x04args\x12\x12\n" +
-	"\x04spec\x18\x04 \x01(\tR\x04spec2\xa1\x05\n" +
+	"\x04spec\x18\x04 \x01(\tR\x04spec\"8\n" +
+	"\x0fGetStatsRequest\x12%\n" +
+	"\x0ewindow_seconds\x18\x01 \x01(\x05R\rwindowSeconds\"\xd5\x02\n" +
+	"\x05Stats\x12%\n" +
+	"\x0ewindow_seconds\x18\x01 \x01(\x05R\rwindowSeconds\x12*\n" +
+	"\x11completed_per_sec\x18\x02 \x01(\x01R\x0fcompletedPerSec\x12/\n" +
+	"\x14start_latency_p50_ms\x18\x03 \x01(\x01R\x11startLatencyP50Ms\x12/\n" +
+	"\x14start_latency_p95_ms\x18\x04 \x01(\x01R\x11startLatencyP95Ms\x12/\n" +
+	"\x14start_latency_p99_ms\x18\x05 \x01(\x01R\x11startLatencyP99Ms\x12\x18\n" +
+	"\aretries\x18\x06 \x01(\x03R\aretries\x12\x1f\n" +
+	"\vdead_letter\x18\a \x01(\x03R\n" +
+	"deadLetter\x12+\n" +
+	"\x11lease_expirations\x18\b \x01(\x03R\x10leaseExpirations2\xdf\x06\n" +
 	"\bConveyor\x12Y\n" +
 	"\aEnqueue\x12\x1b.conveyor.v1.EnqueueRequest\x1a\x1c.conveyor.v1.EnqueueResponse\"\x13\x82\xd3\xe4\x93\x02\r:\x01*\"\b/v1/jobs\x12M\n" +
 	"\x06GetJob\x12\x1a.conveyor.v1.GetJobRequest\x1a\x10.conveyor.v1.Job\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/jobs/{id}\x12Y\n" +
 	"\bListJobs\x12\x1c.conveyor.v1.ListJobsRequest\x1a\x1d.conveyor.v1.ListJobsResponse\"\x10\x82\xd3\xe4\x93\x02\n" +
 	"\x12\b/v1/jobs\x12h\n" +
 	"\tCancelJob\x12\x1d.conveyor.v1.CancelJobRequest\x1a\x1b.conveyor.v1.StatusResponse\"\x1f\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/jobs/{id}:cancel\x12e\n" +
-	"\bRetryJob\x12\x1c.conveyor.v1.RetryJobRequest\x1a\x1b.conveyor.v1.StatusResponse\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/jobs/{id}:retry\x12a\n" +
+	"\bRetryJob\x12\x1c.conveyor.v1.RetryJobRequest\x1a\x1b.conveyor.v1.StatusResponse\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/jobs/{id}:retry\x12k\n" +
+	"\n" +
+	"DiscardJob\x12\x1e.conveyor.v1.DiscardJobRequest\x1a\x1b.conveyor.v1.StatusResponse\" \x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/v1/jobs/{id}:discard\x12a\n" +
 	"\n" +
 	"ListQueues\x12\x1e.conveyor.v1.ListQueuesRequest\x1a\x1f.conveyor.v1.ListQueuesResponse\"\x12\x82\xd3\xe4\x93\x02\f\x12\n" +
 	"/v1/queues\x12\\\n" +
 	"\n" +
-	"CreateCron\x12\x1e.conveyor.v1.CreateCronRequest\x1a\x19.conveyor.v1.CronSchedule\"\x13\x82\xd3\xe4\x93\x02\r:\x01*\"\b/v1/cronB>Z<github.com/pavan-dangeti/Conveyor/api/conveyor/v1;conveyorv1b\x06proto3"
+	"CreateCron\x12\x1e.conveyor.v1.CreateCronRequest\x1a\x19.conveyor.v1.CronSchedule\"\x13\x82\xd3\xe4\x93\x02\r:\x01*\"\b/v1/cron\x12O\n" +
+	"\bGetStats\x12\x1c.conveyor.v1.GetStatsRequest\x1a\x12.conveyor.v1.Stats\"\x11\x82\xd3\xe4\x93\x02\v\x12\t/v1/statsB>Z<github.com/pavan-dangeti/Conveyor/api/conveyor/v1;conveyorv1b\x06proto3"
 
 var (
 	file_conveyor_v1_conveyor_proto_rawDescOnce sync.Once
@@ -971,7 +1227,7 @@ func file_conveyor_v1_conveyor_proto_rawDescGZIP() []byte {
 	return file_conveyor_v1_conveyor_proto_rawDescData
 }
 
-var file_conveyor_v1_conveyor_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_conveyor_v1_conveyor_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_conveyor_v1_conveyor_proto_goTypes = []any{
 	(*Job)(nil),                // 0: conveyor.v1.Job
 	(*EnqueueRequest)(nil),     // 1: conveyor.v1.EnqueueRequest
@@ -981,34 +1237,41 @@ var file_conveyor_v1_conveyor_proto_goTypes = []any{
 	(*ListJobsResponse)(nil),   // 5: conveyor.v1.ListJobsResponse
 	(*CancelJobRequest)(nil),   // 6: conveyor.v1.CancelJobRequest
 	(*RetryJobRequest)(nil),    // 7: conveyor.v1.RetryJobRequest
-	(*StatusResponse)(nil),     // 8: conveyor.v1.StatusResponse
-	(*ListQueuesRequest)(nil),  // 9: conveyor.v1.ListQueuesRequest
-	(*QueueInfo)(nil),          // 10: conveyor.v1.QueueInfo
-	(*ListQueuesResponse)(nil), // 11: conveyor.v1.ListQueuesResponse
-	(*CronSchedule)(nil),       // 12: conveyor.v1.CronSchedule
-	(*CreateCronRequest)(nil),  // 13: conveyor.v1.CreateCronRequest
-	nil,                        // 14: conveyor.v1.QueueInfo.DepthByStateEntry
+	(*DiscardJobRequest)(nil),  // 8: conveyor.v1.DiscardJobRequest
+	(*StatusResponse)(nil),     // 9: conveyor.v1.StatusResponse
+	(*ListQueuesRequest)(nil),  // 10: conveyor.v1.ListQueuesRequest
+	(*QueueInfo)(nil),          // 11: conveyor.v1.QueueInfo
+	(*ListQueuesResponse)(nil), // 12: conveyor.v1.ListQueuesResponse
+	(*CronSchedule)(nil),       // 13: conveyor.v1.CronSchedule
+	(*CreateCronRequest)(nil),  // 14: conveyor.v1.CreateCronRequest
+	(*GetStatsRequest)(nil),    // 15: conveyor.v1.GetStatsRequest
+	(*Stats)(nil),              // 16: conveyor.v1.Stats
+	nil,                        // 17: conveyor.v1.QueueInfo.DepthByStateEntry
 }
 var file_conveyor_v1_conveyor_proto_depIdxs = []int32{
 	0,  // 0: conveyor.v1.ListJobsResponse.jobs:type_name -> conveyor.v1.Job
-	14, // 1: conveyor.v1.QueueInfo.depth_by_state:type_name -> conveyor.v1.QueueInfo.DepthByStateEntry
-	10, // 2: conveyor.v1.ListQueuesResponse.queues:type_name -> conveyor.v1.QueueInfo
+	17, // 1: conveyor.v1.QueueInfo.depth_by_state:type_name -> conveyor.v1.QueueInfo.DepthByStateEntry
+	11, // 2: conveyor.v1.ListQueuesResponse.queues:type_name -> conveyor.v1.QueueInfo
 	1,  // 3: conveyor.v1.Conveyor.Enqueue:input_type -> conveyor.v1.EnqueueRequest
 	3,  // 4: conveyor.v1.Conveyor.GetJob:input_type -> conveyor.v1.GetJobRequest
 	4,  // 5: conveyor.v1.Conveyor.ListJobs:input_type -> conveyor.v1.ListJobsRequest
 	6,  // 6: conveyor.v1.Conveyor.CancelJob:input_type -> conveyor.v1.CancelJobRequest
 	7,  // 7: conveyor.v1.Conveyor.RetryJob:input_type -> conveyor.v1.RetryJobRequest
-	9,  // 8: conveyor.v1.Conveyor.ListQueues:input_type -> conveyor.v1.ListQueuesRequest
-	13, // 9: conveyor.v1.Conveyor.CreateCron:input_type -> conveyor.v1.CreateCronRequest
-	2,  // 10: conveyor.v1.Conveyor.Enqueue:output_type -> conveyor.v1.EnqueueResponse
-	0,  // 11: conveyor.v1.Conveyor.GetJob:output_type -> conveyor.v1.Job
-	5,  // 12: conveyor.v1.Conveyor.ListJobs:output_type -> conveyor.v1.ListJobsResponse
-	8,  // 13: conveyor.v1.Conveyor.CancelJob:output_type -> conveyor.v1.StatusResponse
-	8,  // 14: conveyor.v1.Conveyor.RetryJob:output_type -> conveyor.v1.StatusResponse
-	11, // 15: conveyor.v1.Conveyor.ListQueues:output_type -> conveyor.v1.ListQueuesResponse
-	12, // 16: conveyor.v1.Conveyor.CreateCron:output_type -> conveyor.v1.CronSchedule
-	10, // [10:17] is the sub-list for method output_type
-	3,  // [3:10] is the sub-list for method input_type
+	8,  // 8: conveyor.v1.Conveyor.DiscardJob:input_type -> conveyor.v1.DiscardJobRequest
+	10, // 9: conveyor.v1.Conveyor.ListQueues:input_type -> conveyor.v1.ListQueuesRequest
+	14, // 10: conveyor.v1.Conveyor.CreateCron:input_type -> conveyor.v1.CreateCronRequest
+	15, // 11: conveyor.v1.Conveyor.GetStats:input_type -> conveyor.v1.GetStatsRequest
+	2,  // 12: conveyor.v1.Conveyor.Enqueue:output_type -> conveyor.v1.EnqueueResponse
+	0,  // 13: conveyor.v1.Conveyor.GetJob:output_type -> conveyor.v1.Job
+	5,  // 14: conveyor.v1.Conveyor.ListJobs:output_type -> conveyor.v1.ListJobsResponse
+	9,  // 15: conveyor.v1.Conveyor.CancelJob:output_type -> conveyor.v1.StatusResponse
+	9,  // 16: conveyor.v1.Conveyor.RetryJob:output_type -> conveyor.v1.StatusResponse
+	9,  // 17: conveyor.v1.Conveyor.DiscardJob:output_type -> conveyor.v1.StatusResponse
+	12, // 18: conveyor.v1.Conveyor.ListQueues:output_type -> conveyor.v1.ListQueuesResponse
+	13, // 19: conveyor.v1.Conveyor.CreateCron:output_type -> conveyor.v1.CronSchedule
+	16, // 20: conveyor.v1.Conveyor.GetStats:output_type -> conveyor.v1.Stats
+	12, // [12:21] is the sub-list for method output_type
+	3,  // [3:12] is the sub-list for method input_type
 	3,  // [3:3] is the sub-list for extension type_name
 	3,  // [3:3] is the sub-list for extension extendee
 	0,  // [0:3] is the sub-list for field type_name
@@ -1025,7 +1288,7 @@ func file_conveyor_v1_conveyor_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_conveyor_v1_conveyor_proto_rawDesc), len(file_conveyor_v1_conveyor_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

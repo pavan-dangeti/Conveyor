@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/pavan-dangeti/Conveyor/internal/metrics"
 	"github.com/pavan-dangeti/Conveyor/internal/queue"
 )
 
@@ -128,10 +129,16 @@ func (w *Worker) drain(wg *sync.WaitGroup) error {
 }
 
 func (w *Worker) execute(ctx context.Context, j queue.Job, h Handler) {
+	start := time.Now()
 	jobCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go w.heartbeat(jobCtx, cancel, j)
 	err := h(jobCtx, j)
+	outcome := "ok"
+	if err != nil {
+		outcome = "error"
+	}
+	metrics.JobSeconds.WithLabelValues(j.Kind, outcome).Observe(time.Since(start).Seconds())
 	if jobCtx.Err() != nil {
 		return
 	}
