@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pavan-dangeti/Conveyor/internal/client"
@@ -32,6 +33,7 @@ func main() {
 		var queueName, kind, args, key string
 		var maxAttempts, priority int64
 		var delay time.Duration
+		var dependsOn []int64
 		for i := 0; i < len(rest); i++ {
 			switch rest[i] {
 			case "--queue":
@@ -46,6 +48,9 @@ func main() {
 			case "--idempotency-key":
 				key = rest[i+1]
 				i++
+			case "--depends-on":
+				dependsOn = parseIDs(rest[i+1])
+				i++
 			case "--max-attempts":
 				maxAttempts, _ = strconv.ParseInt(rest[i+1], 10, 32)
 				i++
@@ -57,7 +62,7 @@ func main() {
 				i++
 			}
 		}
-		id, deduped, err := c.Enqueue(ctx, queueName, kind, []byte(args), int32(priority), int32(maxAttempts), delay, key)
+		id, deduped, err := c.Enqueue(ctx, queueName, kind, []byte(args), int32(priority), int32(maxAttempts), delay, key, dependsOn)
 		if err != nil {
 			fatal(err)
 		}
@@ -137,7 +142,7 @@ func main() {
 func usage() {
 	fmt.Println(`usage: conveyor <command> [flags]
 commands:
-  enqueue --queue --kind --args '{...}' [--priority N] [--max-attempts N] [--delay 5s] [--idempotency-key K]
+  enqueue --queue --kind --args '{...}' [--priority N] [--max-attempts N] [--delay 5s] [--idempotency-key K] [--depends-on 12,34]
   jobs [--queue Q] [--state S] [--limit N]
   cancel <id>
   retry <id>
@@ -148,4 +153,19 @@ commands:
 func fatal(err error) {
 	fmt.Fprintln(os.Stderr, "error:", err)
 	os.Exit(1)
+}
+
+// parseIDs splits a comma-separated list of job IDs.
+func parseIDs(s string) []int64 {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]int64, 0, len(parts))
+	for _, p := range parts {
+		if v, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64); err == nil {
+			out = append(out, v)
+		}
+	}
+	return out
 }

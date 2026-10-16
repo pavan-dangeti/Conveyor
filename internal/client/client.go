@@ -35,10 +35,11 @@ func (c *Client) ctx(ctx context.Context) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+c.token)
 }
 
-func (c *Client) Enqueue(ctx context.Context, queueName, kind string, args []byte, priority int32, maxAttempts int32, delay time.Duration, idempotencyKey string) (int64, bool, error) {
+func (c *Client) Enqueue(ctx context.Context, queueName, kind string, args []byte, priority int32, maxAttempts int32, delay time.Duration, idempotencyKey string, dependsOn []int64) (int64, bool, error) {
 	r, err := c.c.Enqueue(c.ctx(ctx), &conveyorv1.EnqueueRequest{
 		Queue: queueName, Kind: kind, Args: string(args), Priority: priority,
 		MaxAttempts: maxAttempts, DelaySeconds: int32(delay.Seconds()), IdempotencyKey: idempotencyKey,
+		DependsOn: dependsOn,
 	})
 	if err != nil {
 		return 0, false, err
