@@ -1,6 +1,6 @@
 # Conveyor — Design Document
 
-> Status: Draft for review (Phase 0). Last updated: 2026-10-08.
+> Status: Active (Phases 0–3 implemented). Last updated: 2026-10-16.
 
 ## 1. Context
 
@@ -273,6 +273,17 @@ Workers `LISTEN` and re-run dequeue immediately. Polling (1 s idle backoff,
 capped) is the fallback for missed notifications and for NOTIFY-suppressed
 maintenance sweeps.
 
+### 5.10 Trade-offs
+
+- **Testcontainers for integration tests.** It keeps CI hermetic and parallel;
+  the cost is slower tests and a Docker daemon requirement.
+- **Prometheus pull-based scraping.** The API process stays free of client
+  wiring; the cost is an extra component to operate.
+- **A session-level advisory lock for leader election.** One lock per
+  maintenance process resolves failover without a scheduler; its cost is that
+  only one maintenance process runs at a time, and a crashed leader's lock is
+  released by the database itself.
+
 ## 6. Interfaces
 
 - **gRPC API** (`Enqueue`, `Dequeue`-internal, `GetJob`, `ListJobs`,
@@ -301,7 +312,7 @@ maintenance sweeps.
 
 `spec/tla/Conveyor.tla` models enqueue, dequeue, heartbeat, lease expiry,
 completion, retry, worker crash, and reaper. It is model-checked with TLC
-against invariants 1–5 on a small configuration (3 jobs, 2 workers, bounded
+against invariants 1–5 on a small configuration (2 jobs, 2 workers, bounded
 lease versions). The model intentionally abstracts: SQL implementation
 details, priorities, cron, workflows, rate limits, and the network between
 API and workers (treated as atomic RPC). See §10 limitations.
@@ -309,7 +320,7 @@ API and workers (treated as atomic RPC). See §10 limitations.
 ### 7.3 Fault injection
 
 A harness runs real API servers and workers as processes and injects:
-`kill -9` on workers, `SIGSTOP` (lease-limbo), network faults via Toxiproxy
+`kill -9` on workers, `SIGSTOP` (lease-limbo), network faults via faultproxy
 (latency, drops, partitions) between workers and Postgres, Postgres restarts,
 and clock skew. Each job's side effect appends to `ledger` with the fencing
 token. A checker reads the committed history and asserts: no job lost, no
