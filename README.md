@@ -20,6 +20,7 @@ The distinction — and the mechanism (idempotency keys + fencing tokens) — is
 | system | workers | jobs | throughput | p50 enqueue→start | p95 | p99 |
 |---|---|---|---|---|---|---|
 | Conveyor (debounced NOTIFY) | 4 loops × 8 in-flight | 500 | **1243/s** | 23 ms | 48 ms | 53 ms |
+| Conveyor (polling only) | 4 loops × 8 in-flight | 500 | 1244/s | 49 ms | 80 ms | 89 ms |
 | Conveyor (NOTIFY per enqueue) | same | 500 | 789/s | 1 ms | 7 ms | 13 ms |
 | River v0.49.0 (FetchCooldown 100ms) | MaxWorkers 32 | 500 | 298/s | 591 ms | 1088 ms | 1165 ms |
 | River v0.49.0 (FetchCooldown 1ms) | MaxWorkers 32 | 500 | 643/s | 2 ms | 3 ms | 5 ms |
