@@ -129,3 +129,110 @@ func TestFailingJobGoesRetryableThenDiscarded(t *testing.T) {
 		}
 	}
 }
+
+func TestHeartbeatKeepsLeaseAlive(t *testing.T) {
+	db, dsn := setup(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	lease := 300 * time.Millisecond
+	if _, _, err := queue.Enqueue(ctx, db, queue.EnqueueParams{
+		Queue: "q1", Kind: "slow", Args: json.RawMessage(`{}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w := New(db, dsn, "q1", "worker-1", WithLease(lease), WithBatch(1))
+	w.Handle("slow", func(ctx context.Context, j queue.Job) error {
+		<-time.After(1 * time.Second)
+		return nil
+	})
+	wctx, wcancel := context.WithCancel(ctx)
+	defer wcancel()
+	go func() { _ = w.Run(wctx) }()
+
+	var state string
+	deadline := time.After(15 * time.Second)
+	for {
+		if err := db.QueryRow(`SELECT state FROM jobs WHERE queue='q1'`).Scan(&state); err != nil {
+			t.Fatal(err)
+		}
+		if state == "completed" {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("lease was reaped while the handler was running, state=%s", state)
+		case <-time.After(250 * time.Millisecond):
+			if n, err := queue.ReapExpiredLeases(ctx, db); err != nil {
+				t.Fatal(err)
+			} else if n > 0 {
+				t.Fatalf("lease expired after %dms", lease)
+			}
+		}
+	}
+}
+
+func TestLeaseExpiryRecoveryByAnotherWorker(t *testing.T) {
+	db, dsn := setup(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	lease := 300 * time.Millisecond
+	if _, _, err := queue.Enqueue(ctx, db, queue.EnqueueParams{
+		Queue: "q1", Kind: "slow", Args: json.RawMessage(`{}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	held := make(chan struct{})
+	w1 := New(db, dsn, "q1", "worker-1", WithLease(lease), WithBatch(1))
+	w1.Handle("slow", func(ctx context.Context, j queue.Job) error {
+		<-held
+		return nil
+	})
+	w1ctx, w1cancel := context.WithCancel(ctx)
+	defer w1cancel()
+	go func() { _ = w1.Run(w1ctx) }()
+
+	// Simulate a crashed worker whose lease is already gone. Its fencing token
+	// is stale forever, exactly as after a kill -9.
+	if _, err := db.Exec(`UPDATE jobs SET lease_expiry = now() - interval '1 second' WHERE state='running'`); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := queue.ReapExpiredLeases(ctx, db); err != nil {
+		t.Fatal(err)
+	} else if n != 1 {
+		t.Fatalf("want 1 reaped, got %d", n)
+	}
+	if _, err := queue.PromoteDue(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	var state string
+	if err := db.QueryRow(`SELECT state FROM jobs WHERE queue='q1'`).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "available" {
+		t.Fatalf("want available after promotion, got %s", state)
+	}
+
+	w2 := New(db, dsn, "q1", "worker-2", WithLease(lease), WithBatch(1))
+	w2.Handle("slow", func(ctx context.Context, j queue.Job) error {
+		return nil
+	})
+	w2ctx, w2cancel := context.WithCancel(ctx)
+	defer w2cancel()
+	go func() { _ = w2.Run(w2ctx) }()
+
+	deadline := time.After(15 * time.Second)
+	for {
+		if err := db.QueryRow(`SELECT state FROM jobs WHERE queue='q1'`).Scan(&state); err != nil {
+			t.Fatal(err)
+		}
+		if state == "completed" {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("no worker completed the recovered job, state=%s", state)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	close(held)
+}

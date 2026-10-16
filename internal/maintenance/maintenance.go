@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/pavan-dangeti/Conveyor/internal/metrics"
 	"github.com/pavan-dangeti/Conveyor/internal/queue"
 )
 
@@ -40,6 +41,8 @@ func RunElectedLoop(ctx context.Context, db *sql.DB, logger *slog.Logger, tick t
 			continue
 		}
 		logger.Info("maintenance leader acquired")
+		metrics.IsLeader.Set(1)
+		metrics.LeaderChanges.Inc()
 		t := time.NewTicker(tick)
 		leaderCtx, cancelLeader := context.WithCancel(ctx)
 		go func() {
@@ -61,6 +64,7 @@ func RunElectedLoop(ctx context.Context, db *sql.DB, logger *slog.Logger, tick t
 			case <-ctx.Done():
 				t.Stop()
 				cancelLeader()
+				metrics.IsLeader.Set(0)
 				_, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1)`, advisoryLockKey)
 				return nil
 			case <-leaderCtx.Done():
@@ -86,6 +90,7 @@ func RunElectedLoop(ctx context.Context, db *sql.DB, logger *slog.Logger, tick t
 			}
 		}
 		cancelLeader()
+		metrics.IsLeader.Set(0)
 		logger.Warn("maintenance leadership lost")
 	}
 }
