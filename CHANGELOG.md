@@ -1,5 +1,33 @@
 # Changelog
 
+## v1.7.0 (2026-10-17)
+
+Phase 6 — fault-injection results detail. `results/fault-2026-10-08.json` now records the hardware, the four named scenarios (proxy drops+latency, Postgres restart, worker SIGKILL, worker SIGSTOP/SIGCONT), per-scenario completion and violation counts, and the reproduction command. Previously it held only aggregates.
+
+## v1.6.0 (2026-10-17)
+
+Phase 5 — job dependencies end to end. `Client.Enqueue` forwards `depends_on` (it was silently dropped) and the CLI accepts `enqueue --depends-on 12,34`, so `job_dependencies` rows can actually be created.
+
+## v1.5.0 (2026-10-17)
+
+Phase 4 — worker heartbeat and lease-expiry tests. `TestHeartbeatKeepsLeaseAlive` proves a handler outliving its lease is never reaped; `TestLeaseExpiryRecoveryByAnotherWorker` proves an expired lease is reaped and recovered by a second worker while the first holder's token stays stale.
+
+## v1.4.0 (2026-10-17)
+
+Phase 3 — compose in CI. A new `compose` job validates `docker-compose.yml` and `compose-demo.yml`, starts Postgres, and smoke-tests it. The compose files existed but were never exercised by CI.
+
+## v1.3.0 (2026-10-17)
+
+Phase 2 — CI honesty checks. A test fails CI if the README results table drifts from `results/benchmarks-*.json` (no faked numbers, no missing runs), and a second test fails below 85 % coverage of `internal/statemachine`. Also added the `conveyor-notify-removed` run that existed only in the results file.
+
+## v1.2.0 (2026-10-17)
+
+Phase 1 — observability wiring and operator RPCs. `DiscardJob` and `GetStats` RPCs, `run_at`/`depends_on` forwarding, `observe()` metrics on every RPC, job-duration histogram, leader gauge and leader-change counter, Prometheus DB collector, `migrations/0003_observability.sql`, and the dashboard extended to eight panels.
+
+## v1.1.0 (2026-10-17)
+
+Phase 0 — design document fixes: status header activated, missing Trade-offs section added, TLA+ job count corrected (3 → 2), fault proxy named correctly.
+
 ## v1.0.0 (2026-10-08)
 
 First stable release. Highlights:
