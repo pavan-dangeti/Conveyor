@@ -1,151 +1,145 @@
-// loadgen enqueues N jobs and executes them with an in-process worker fleet,
-// recording throughput and enqueue-to-start latency percentiles.
+// loadgen measures Conveyor's throughput and enqueue-to-start latency for
+// one configuration, repeated -reps times, and appends the result to a JSON
+// file. scripts/bench.sh drives the full sweep.
 package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"flag"
 	"fmt"
-	"io"
-	"log/slog"
-	"os"
-	"sort"
+	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/pavan-dangeti/Conveyor/internal/bench"
 	"github.com/pavan-dangeti/Conveyor/internal/migrate"
 	"github.com/pavan-dangeti/Conveyor/internal/queue"
 	"github.com/pavan-dangeti/Conveyor/internal/store"
-	"github.com/pavan-dangeti/Conveyor/internal/worker"
+	"github.com/pavan-dangeti/Conveyor/worker"
 )
 
-type benchResult struct {
-	Workers      int     `json:"workers"`
-	Batch        int     `json:"batch"`
-	PayloadBytes int     `json:"payload_bytes"`
-	Jobs         int     `json:"jobs"`
-	Throughput   float64 `json:"throughput_jobs_per_sec"`
-	P50Ms        float64 `json:"enqueue_to_start_p50_ms"`
-	P95Ms        float64 `json:"enqueue_to_start_p95_ms"`
-	P99Ms        float64 `json:"enqueue_to_start_p99_ms"`
-	Errors       int     `json:"errors"`
-}
+const producers = 4
 
 func main() {
-	dsn := env("DATABASE_URL", "postgres://conveyor:conveyor@127.0.0.1:55433/conveyor?sslmode=disable")
-	jobs := envInt("JOBS", 200)
-	workersN := envInt("WORKERS", 4)
-	batch := envInt("BATCH", 4)
-	payload := envInt("PAYLOAD_BYTES", 128)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-	db, err := store.Open(ctx, dsn)
+	dsn := flag.String("dsn", "postgres://conveyor:conveyor@127.0.0.1:55433/conveyor?sslmode=disable", "Postgres DSN")
+	name := flag.String("name", "", "config name in the results file (default derived from flags)")
+	out := flag.String("out", "", "results file to append to (default: print the summary only)")
+	jobs := flag.Int("jobs", 2000, "jobs per rep")
+	reps := flag.Int("reps", 5, "repetitions")
+	workers := flag.Int("workers", 4, "worker loops")
+	batch := flag.Int("batch", 8, "concurrent jobs per worker loop")
+	payload := flag.Int("payload", 128, "bytes of padding in each job's args")
+	debounce := flag.Duration("notify-debounce", 10*time.Millisecond, "minimum gap between pg_notify wake-ups; 0 = one per enqueue")
+	batched := flag.Bool("batched-complete", true, "group completions into one fenced UPDATE per worker")
+	flag.Parse()
+	if *name == "" {
+		*name = fmt.Sprintf("conveyor w=%d b=%d payload=%d", *workers, *batch, *payload)
+	}
+	queue.SetNotifyDebounce(*debounce)
+
+	ctx := context.Background()
+	db, err := store.Open(ctx, *dsn)
 	if err != nil {
-		fatal(err)
+		log.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
+	db.SetMaxOpenConns(*workers*2 + producers + 4)
 	if err := migrate.Up(ctx, db); err != nil {
-		fatal(err)
+		log.Fatal(err)
 	}
-	_, _ = db.Exec(`INSERT INTO queues(name) VALUES ('bench') ON CONFLICT DO NOTHING`)
-	_, _ = db.Exec(`DELETE FROM jobs WHERE queue='bench'`)
+	if _, err := db.Exec(`INSERT INTO queues (name, concurrency) VALUES ('bench', 100000)
+ON CONFLICT (name) DO UPDATE SET concurrency = 100000, rate_limit_per_sec = NULL`); err != nil {
+		log.Fatal(err)
+	}
 
-	argsTemplate := `{"enqueued_unix_ms":%d,"data":"%s"}`
-	var latencies []float64
-	var mu sync.Mutex
-	var completed atomic.Int64
-	var errors atomic.Int64
+	cfg := bench.Config{Name: *name, System: "loadgen", Params: map[string]any{
+		"jobs": *jobs, "workers": *workers, "batch": *batch, "payload_bytes": *payload,
+		"notify_debounce": debounce.String(), "batched_complete": *batched, "producers": producers,
+	}}
+	padding := strings.Repeat("x", *payload)
+	for r := range *reps {
+		if _, err := db.Exec(`DELETE FROM jobs WHERE queue = 'bench'`); err != nil {
+			log.Fatal(err)
+		}
+		rep := runRep(ctx, db, *dsn, *jobs, *workers, *batch, padding, *batched)
+		log.Printf("%s rep %d: %.0f jobs/s p50=%.1fms p95=%.1fms p99=%.1fms errors=%d",
+			*name, r+1, rep.Throughput, rep.P50Ms, rep.P95Ms, rep.P99Ms, rep.Errors)
+		cfg.Reps = append(cfg.Reps, rep)
+	}
+	if *out == "" {
+		b, _ := json.MarshalIndent(bench.Summarise(cfg.Reps), "", "  ")
+		fmt.Println(string(b))
+		return
+	}
+	if err := bench.Append(*out, cfg, db); err != nil {
+		log.Fatal(err)
+	}
+}
 
-	handler := func(ctx context.Context, j queue.Job) error {
+func runRep(ctx context.Context, db *sql.DB, dsn string, jobs, workers, batch int, padding string, batched bool) bench.Rep {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var lat bench.Latencies
+	var started, errs atomic.Int64
+	done := make(chan struct{})
+	handler := func(_ context.Context, j queue.Job) error {
 		var a struct {
-			Enqueued int64 `json:"enqueued_unix_ms"`
+			At int64 `json:"enqueued_unix_us"`
 		}
 		if err := json.Unmarshal(j.Args, &a); err != nil {
 			return err
 		}
-		mu.Lock()
-		latencies = append(latencies, float64(time.Since(time.UnixMilli(a.Enqueued)).Milliseconds()))
-		mu.Unlock()
-		completed.Add(1)
+		lat.Add(time.Since(time.UnixMicro(a.At)))
+		if started.Add(1) == int64(jobs) {
+			close(done)
+		}
 		return nil
 	}
-
-	data := string(make([]byte, payload))
-	for i := range data {
-		data = data[:i] + "x" + data[i+1:]
-	}
-	start := time.Now()
-	enqDone := make(chan struct{})
-	go func() {
-		for i := 0; i < jobs; i++ {
-			args := fmt.Sprintf(argsTemplate, time.Now().UnixMilli(), data)
-			if _, _, err := queue.Enqueue(ctx, db, queue.EnqueueParams{Queue: "bench", Kind: "noop", Args: json.RawMessage(args)}); err != nil {
-				errors.Add(1)
-			}
-		}
-		close(enqDone)
-	}()
 	var wg sync.WaitGroup
-	for i := 0; i < workersN; i++ {
+	for i := range workers {
+		opts := []worker.Option{worker.WithBatch(batch), worker.WithLease(30 * time.Second), worker.WithBudget(5 * time.Second)}
+		if !batched {
+			opts = append(opts, worker.WithoutBatchedCompletion())
+		}
+		w := worker.New(db, dsn, "bench", fmt.Sprintf("loadgen-%d", i), opts...)
+		w.Handle("noop", handler)
 		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			w := worker.New(db, dsn, "bench", fmt.Sprintf("loadgen-%d", i), worker.WithLease(5*time.Second), worker.WithBatch(batch))
-			w.Handle("noop", handler)
-			wctx, cancel := context.WithCancel(ctx)
-			defer cancel()
-			_ = w.Run(wctx)
-		}(i)
-		time.Sleep(100 * time.Millisecond)
+		go func() { defer wg.Done(); _ = w.Run(ctx) }()
 	}
-	go func() {
-		for completed.Load() < int64(jobs) && time.Since(start) < 8*time.Minute {
-			time.Sleep(200 * time.Millisecond)
-		}
-		cancel()
-	}()
-	<-enqDone
-	for completed.Load() < int64(jobs) && err == nil {
-		time.Sleep(200 * time.Millisecond)
-		if time.Since(start) > 8*time.Minute {
-			break
-		}
+	time.Sleep(300 * time.Millisecond) // let LISTEN connections come up before the first enqueue
+
+	waitCtx, stopWaits := context.WithCancel(ctx)
+	waitsCh := make(chan map[string]int, 1)
+	go func() { waitsCh <- bench.SampleWaits(waitCtx, db) }()
+
+	start := time.Now()
+	var pwg sync.WaitGroup
+	for p := range producers {
+		pwg.Add(1)
+		go func() {
+			defer pwg.Done()
+			for i := p; i < jobs; i += producers {
+				args := fmt.Sprintf(`{"enqueued_unix_us":%d,"pad":%q}`, time.Now().UnixMicro(), padding)
+				if _, _, err := queue.Enqueue(ctx, db, queue.EnqueueParams{Queue: "bench", Kind: "noop", Args: json.RawMessage(args)}); err != nil {
+					errs.Add(1)
+				}
+			}
+		}()
 	}
+	pwg.Wait()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Minute):
+		log.Printf("timeout: %d of %d jobs started", started.Load(), jobs)
+	}
+	elapsed := time.Since(start)
+	stopWaits()
+	waits := <-waitsCh
+	cancel()
 	wg.Wait()
-	res := benchResult{Workers: workersN, Batch: batch, PayloadBytes: payload, Jobs: jobs, Errors: int(errors.Load())}
-	elapsed := time.Since(start).Seconds()
-	res.Throughput = float64(completed.Load()) / elapsed
-	sort.Float64s(latencies)
-	if len(latencies) > 0 {
-		res.P50Ms = latencies[len(latencies)/2]
-		res.P95Ms = latencies[len(latencies)*95/100]
-		res.P99Ms = latencies[len(latencies)*99/100]
-	}
-	out, _ := json.MarshalIndent(res, "", "  ")
-	fmt.Println(string(out))
+	return lat.Finish(started.Load(), elapsed, errs.Load(), waits)
 }
-
-func env(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
-func envInt(k string, def int) int {
-	if v := os.Getenv(k); v != "" {
-		var n int
-		_, _ = fmt.Sscanf(v, "%d", &n)
-		return n
-	}
-	return def
-}
-
-func fatal(err error) {
-	fmt.Fprintln(os.Stderr, err)
-	os.Exit(1)
-}
-
-var _ = io.Discard
-var _ = slog.Default()
