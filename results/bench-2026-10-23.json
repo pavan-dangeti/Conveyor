@@ -1,0 +1,2194 @@
+{
+  "date": "2026-10-23",
+  "host": "darwin/arm64; sysctl cpu, memsize, ncpu: Apple M5 17179869184 10",
+  "versions": {
+    "go": "go1.27.1",
+    "postgres": "17.11"
+  },
+  "method": "Each config runs its reps back to back against one Postgres container on the same host as the Go process. Per rep the bench queue is emptied, then 4 producer goroutines enqueue all jobs while the workers drain them. Throughput = jobs / (first enqueue to last handler start). Latency = enqueue timestamp carried in the job args to handler start, both read from the same process clock; percentiles are nearest-rank over every job in the rep. Summary = mean over reps with a two-sided 95% Student-t interval.",
+  "configs": [
+    {
+      "name": "conveyor baseline",
+      "system": "loadgen",
+      "params": {
+        "batch": 8,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 128,
+        "producers": 4,
+        "workers": 4
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor baseline -workers 4 -batch 8 -payload 128",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 2590.795090802387,
+          "p50_ms": 5.257,
+          "p95_ms": 10.297,
+          "p99_ms": 13.786,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 124,
+            "Client:ClientRead": 15,
+            "IO:WalSync": 52,
+            "LWLock:BufferContent": 8,
+            "LWLock:WALWrite": 36,
+            "Lock:transactionid": 14
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2782.7529148467174,
+          "p50_ms": 4.88,
+          "p95_ms": 9.406,
+          "p99_ms": 11.539,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 90,
+            "Client:ClientRead": 9,
+            "IO:WalSync": 51,
+            "LWLock:BufferContent": 2,
+            "LWLock:WALWrite": 37,
+            "Lock:transactionid": 2
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2788.500106769578,
+          "p50_ms": 4.992,
+          "p95_ms": 9.51,
+          "p99_ms": 11.508,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 50,
+            "Client:ClientRead": 8,
+            "IO:WalSync": 52,
+            "LWLock:WALWrite": 34,
+            "Lock:transactionid": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2664.8806032823863,
+          "p50_ms": 4.793,
+          "p95_ms": 9.853,
+          "p99_ms": 12.322,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 112,
+            "Client:ClientRead": 13,
+            "IO:WalSync": 51,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 2,
+            "LWLock:LockManager": 1,
+            "LWLock:WALWrite": 39,
+            "Lock:transactionid": 21
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2659.1215581562055,
+          "p50_ms": 5.166,
+          "p95_ms": 10.616,
+          "p99_ms": 12.625,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 144,
+            "Client:ClientRead": 21,
+            "IO:WalSync": 48,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 8,
+            "LWLock:WALWrite": 33,
+            "Lock:transactionid": 11
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 5.0176,
+          "ci95": 0.23990262026280573
+        },
+        "p95_ms": {
+          "mean": 9.9364,
+          "ci95": 0.6396813605458265
+        },
+        "p99_ms": {
+          "mean": 12.356,
+          "ci95": 1.1621149672420539
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 2697.2100547714554,
+          "ci95": 106.56283753499565
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 520
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 254
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 179
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 66
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 49
+        }
+      ]
+    },
+    {
+      "name": "conveyor before: completion per commit",
+      "system": "loadgen",
+      "params": {
+        "batch": 8,
+        "batched_complete": false,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 128,
+        "producers": 4,
+        "workers": 4
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor before: completion per commit -workers 4 -batch 8 -payload 128 -batched-complete=false",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 1828.750541624477,
+          "p50_ms": 5.438,
+          "p95_ms": 10.859,
+          "p99_ms": 14.497,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 201,
+            "Client:ClientRead": 15,
+            "IO:WalInitSync": 1,
+            "IO:WalSync": 74,
+            "LWLock:BufferContent": 8,
+            "LWLock:LockManager": 2,
+            "LWLock:WALWrite": 143,
+            "Lock:transactionid": 39
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2059.7590159192337,
+          "p50_ms": 5.244,
+          "p95_ms": 9.499,
+          "p99_ms": 12.045,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 192,
+            "Client:ClientRead": 13,
+            "IO:WalSync": 64,
+            "LWLock:BufferContent": 7,
+            "LWLock:LockManager": 1,
+            "LWLock:WALWrite": 124,
+            "Lock:transactionid": 25
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2105.689560030643,
+          "p50_ms": 5.114,
+          "p95_ms": 9.109,
+          "p99_ms": 11.237,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 161,
+            "Client:ClientRead": 20,
+            "IO:WalSync": 58,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 6,
+            "LWLock:WALWrite": 102,
+            "Lock:transactionid": 32,
+            "Timeout:SpinDelay": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2073.48571681904,
+          "p50_ms": 5.404,
+          "p95_ms": 9.508,
+          "p99_ms": 12.818,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 230,
+            "Client:ClientRead": 21,
+            "IO:WalSync": 65,
+            "IO:WalWrite": 4,
+            "LWLock:BufferContent": 6,
+            "LWLock:LockManager": 3,
+            "LWLock:ProcArray": 1,
+            "LWLock:WALInsert": 2,
+            "LWLock:WALWrite": 116,
+            "Lock:transactionid": 24
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2054.5735835256073,
+          "p50_ms": 5.897,
+          "p95_ms": 10.046,
+          "p99_ms": 12.992,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 241,
+            "Client:ClientRead": 21,
+            "IO:WalInitWrite": 1,
+            "IO:WalSync": 66,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 2,
+            "LWLock:WALWrite": 136,
+            "Lock:transactionid": 40
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 5.4194,
+          "ci95": 0.3686540542147341
+        },
+        "p95_ms": {
+          "mean": 9.804199999999998,
+          "ci95": 0.8409160628042729
+        },
+        "p99_ms": {
+          "mean": 12.7178,
+          "ci95": 1.5072691752503398
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 2024.4516835838003,
+          "ci95": 138.04398296023942
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 1025
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 621
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 327
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 160
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 90
+        }
+      ]
+    },
+    {
+      "name": "conveyor notify per enqueue",
+      "system": "loadgen",
+      "params": {
+        "batch": 8,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "0s",
+        "payload_bytes": 128,
+        "producers": 4,
+        "workers": 4
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor notify per enqueue -workers 4 -batch 8 -payload 128 -notify-debounce 0",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 1493.8494952220562,
+          "p50_ms": 4.285,
+          "p95_ms": 6.562,
+          "p99_ms": 8.542,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 446,
+            "Client:ClientRead": 26,
+            "IO:WalSync": 83,
+            "IO:WalWrite": 3,
+            "LWLock:BufferContent": 1,
+            "LWLock:LockManager": 1,
+            "LWLock:WALInsert": 1,
+            "LWLock:WALWrite": 87,
+            "Lock:transactionid": 18,
+            "Lock:tuple": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1641.621956244517,
+          "p50_ms": 4.411,
+          "p95_ms": 6.194,
+          "p99_ms": 7.676,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 427,
+            "Client:ClientRead": 27,
+            "IO:DataFileExtend": 1,
+            "IO:WalSync": 76,
+            "LWLock:BufferContent": 2,
+            "LWLock:WALWrite": 79,
+            "Lock:transactionid": 18
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1503.5857230400738,
+          "p50_ms": 5.123,
+          "p95_ms": 7.394,
+          "p99_ms": 10.523,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 459,
+            "Client:ClientRead": 41,
+            "IO:DataFileExtend": 1,
+            "IO:WalSync": 85,
+            "IO:WalWrite": 4,
+            "LWLock:BufferContent": 1,
+            "LWLock:WALWrite": 61,
+            "Lock:object": 1,
+            "Lock:transactionid": 20
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1596.6420497353424,
+          "p50_ms": 5.108,
+          "p95_ms": 7.276,
+          "p99_ms": 8.958,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 447,
+            "Client:ClientRead": 31,
+            "IO:WalInitSync": 1,
+            "IO:WalSync": 86,
+            "LWLock:BufferContent": 2,
+            "LWLock:WALWrite": 79,
+            "Lock:transactionid": 23,
+            "Timeout:SpinDelay": 2
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1490.2379630011199,
+          "p50_ms": 5.6,
+          "p95_ms": 8.232,
+          "p99_ms": 10.848,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 497,
+            "Client:ClientRead": 25,
+            "IO:WalSync": 83,
+            "IO:WalWrite": 1,
+            "LWLock:WALWrite": 88,
+            "Lock:transactionid": 25
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 4.9054,
+          "ci95": 0.6800330886509566
+        },
+        "p95_ms": {
+          "mean": 7.131600000000001,
+          "ci95": 0.9822732334967491
+        },
+        "p99_ms": {
+          "mean": 9.3094,
+          "ci95": 1.6679689268441902
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 1545.187437448622,
+          "ci95": 86.30843657191335
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 2276
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 413
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 394
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 150
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 104
+        }
+      ]
+    },
+    {
+      "name": "conveyor workers=1",
+      "system": "loadgen",
+      "params": {
+        "batch": 8,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 128,
+        "producers": 4,
+        "workers": 1
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor workers=1 -workers 1 -batch 8",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 1753.1491489447028,
+          "p50_ms": 279.484,
+          "p95_ms": 379.637,
+          "p99_ms": 391.824,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 125,
+            "Client:ClientRead": 6,
+            "IO:WalSync": 50,
+            "LWLock:WALWrite": 35
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1794.1220301253272,
+          "p50_ms": 259.521,
+          "p95_ms": 404.492,
+          "p99_ms": 415.526,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 114,
+            "Client:ClientRead": 7,
+            "IO:WalSync": 49,
+            "LWLock:WALWrite": 28
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1724.3018749811151,
+          "p50_ms": 283.856,
+          "p95_ms": 447.573,
+          "p99_ms": 464.119,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 120,
+            "Client:ClientRead": 3,
+            "IO:WalInitSync": 1,
+            "IO:WalSync": 45,
+            "LWLock:WALInsert": 4,
+            "LWLock:WALWrite": 18,
+            "Timeout:SpinDelay": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1531.6671712846273,
+          "p50_ms": 401.483,
+          "p95_ms": 520.457,
+          "p99_ms": 538.381,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 155,
+            "Client:ClientRead": 8,
+            "IO:WalSync": 46,
+            "IO:WalWrite": 1,
+            "LWLock:WALWrite": 32
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2591.487752101516,
+          "p50_ms": 170.212,
+          "p95_ms": 238.416,
+          "p99_ms": 242.856,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 76,
+            "Client:ClientRead": 7,
+            "IO:WalSync": 43,
+            "LWLock:BufferContent": 1,
+            "LWLock:WALWrite": 22,
+            "Timeout:VacuumDelay": 18
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 278.9112,
+          "ci95": 102.44929685642815
+        },
+        "p95_ms": {
+          "mean": 398.115,
+          "ci95": 129.16536181629226
+        },
+        "p99_ms": {
+          "mean": 410.5412,
+          "ci95": 135.58011172090542
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 1878.9455954874575,
+          "ci95": 510.0793651141827
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 590
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 233
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 135
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 31
+        },
+        {
+          "event": "Timeout:VacuumDelay",
+          "samples": 18
+        }
+      ]
+    },
+    {
+      "name": "conveyor workers=2",
+      "system": "loadgen",
+      "params": {
+        "batch": 8,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 128,
+        "producers": 4,
+        "workers": 2
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor workers=2 -workers 2 -batch 8",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 2858.3299174742556,
+          "p50_ms": 4.542,
+          "p95_ms": 9.096,
+          "p99_ms": 11.067,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 57,
+            "Client:ClientRead": 8,
+            "IO:WalSync": 46,
+            "LWLock:WALWrite": 38,
+            "Lock:transactionid": 2
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2818.5599602858133,
+          "p50_ms": 4.604,
+          "p95_ms": 9.501,
+          "p99_ms": 12.905,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 69,
+            "Client:ClientRead": 10,
+            "IO:WalSync": 42,
+            "LWLock:WALWrite": 31,
+            "Lock:transactionid": 2
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2868.907085241281,
+          "p50_ms": 4.579,
+          "p95_ms": 9.054,
+          "p99_ms": 10.91,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 61,
+            "Client:ClientRead": 12,
+            "IO:WalSync": 38,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 3,
+            "LWLock:WALWrite": 32,
+            "Lock:transactionid": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2983.237931870304,
+          "p50_ms": 4.529,
+          "p95_ms": 9.015,
+          "p99_ms": 10.621,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 74,
+            "Client:ClientRead": 14,
+            "IO:WalSync": 43,
+            "LWLock:BufferContent": 1,
+            "LWLock:WALWrite": 35,
+            "Lock:transactionid": 3
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2903.2386851247675,
+          "p50_ms": 4.592,
+          "p95_ms": 9.113,
+          "p99_ms": 11.358,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 74,
+            "Client:ClientRead": 6,
+            "IO:WalSync": 46,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 5,
+            "LWLock:WALWrite": 45,
+            "Lock:transactionid": 4
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 4.5692,
+          "ci95": 0.04014560559563151
+        },
+        "p95_ms": {
+          "mean": 9.155800000000001,
+          "ci95": 0.24419239856604827
+        },
+        "p99_ms": {
+          "mean": 11.372200000000001,
+          "ci95": 1.1139951378180422
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 2886.4547159992844,
+          "ci95": 76.92404190264254
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 335
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 215
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 181
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 50
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 12
+        }
+      ]
+    },
+    {
+      "name": "conveyor workers=8",
+      "system": "loadgen",
+      "params": {
+        "batch": 8,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 128,
+        "producers": 4,
+        "workers": 8
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor workers=8 -workers 8 -batch 8",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 2664.78976640786,
+          "p50_ms": 5.006,
+          "p95_ms": 10.255,
+          "p99_ms": 11.874,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 82,
+            "Client:ClientRead": 17,
+            "IO:WalSync": 48,
+            "LWLock:ProcArray": 1,
+            "LWLock:WALWrite": 49,
+            "Lock:transactionid": 41,
+            "Timeout:SpinDelay": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2592.1553041532707,
+          "p50_ms": 5.161,
+          "p95_ms": 10.66,
+          "p99_ms": 12.372,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 122,
+            "Client:ClientRead": 11,
+            "IO:WalSync": 60,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 7,
+            "LWLock:WALWrite": 67,
+            "Lock:transactionid": 47,
+            "Lock:tuple": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2663.5713020451326,
+          "p50_ms": 5.148,
+          "p95_ms": 9.837,
+          "p99_ms": 12.247,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 99,
+            "Client:ClientRead": 16,
+            "IO:WalSync": 57,
+            "LWLock:BufferContent": 7,
+            "LWLock:LockManager": 5,
+            "LWLock:WALWrite": 52,
+            "Lock:transactionid": 63,
+            "Lock:tuple": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2498.117955404168,
+          "p50_ms": 4.999,
+          "p95_ms": 9.958,
+          "p99_ms": 13.023,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 87,
+            "Client:ClientRead": 18,
+            "IO:WalSync": 56,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 2,
+            "LWLock:WALInsert": 2,
+            "LWLock:WALWrite": 67,
+            "Lock:transactionid": 25
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2638.167131064106,
+          "p50_ms": 4.937,
+          "p95_ms": 9.96,
+          "p99_ms": 12.188,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 55,
+            "Client:ClientRead": 18,
+            "IO:WalSync": 47,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 1,
+            "LWLock:WALWrite": 38,
+            "Lock:transactionid": 3
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 5.0502,
+          "ci95": 0.12294703115992642
+        },
+        "p95_ms": {
+          "mean": 10.134,
+          "ci95": 0.41211120131149065
+        },
+        "p99_ms": {
+          "mean": 12.340800000000002,
+          "ci95": 0.5253974382554977
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 2611.360291814907,
+          "ci95": 86.6627081379308
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 445
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 273
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 268
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 179
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 80
+        }
+      ]
+    },
+    {
+      "name": "conveyor workers=16",
+      "system": "loadgen",
+      "params": {
+        "batch": 8,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 128,
+        "producers": 4,
+        "workers": 16
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor workers=16 -workers 16 -batch 8",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 1381.3941063856496,
+          "p50_ms": 5.234,
+          "p95_ms": 10.005,
+          "p99_ms": 13.564,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 560,
+            "Client:ClientRead": 39,
+            "IO:WalInitSync": 1,
+            "IO:WalSync": 88,
+            "IO:WalWrite": 2,
+            "IPC:XactGroupUpdate": 1,
+            "LWLock:BufferContent": 13,
+            "LWLock:LockManager": 16,
+            "LWLock:ProcArray": 1,
+            "LWLock:WALWrite": 108,
+            "LWLock:XactSLRU": 1,
+            "Lock:transactionid": 26,
+            "Timeout:SpinDelay": 2
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1269.5344656787308,
+          "p50_ms": 5.371,
+          "p95_ms": 10.919,
+          "p99_ms": 20.169,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 473,
+            "Client:ClientRead": 44,
+            "IO:WalSync": 87,
+            "IO:WalWrite": 4,
+            "LWLock:BufferContent": 5,
+            "LWLock:LockManager": 9,
+            "LWLock:ProcArray": 1,
+            "LWLock:WALInsert": 2,
+            "LWLock:WALWrite": 97,
+            "Lock:transactionid": 26,
+            "Timeout:SpinDelay": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1192.5042163833675,
+          "p50_ms": 5.691,
+          "p95_ms": 11.257,
+          "p99_ms": 14.506,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 631,
+            "Client:ClientRead": 45,
+            "IO:WalSync": 113,
+            "IPC:ProcarrayGroupUpdate": 2,
+            "LWLock:BufferContent": 9,
+            "LWLock:LockManager": 18,
+            "LWLock:ProcArray": 2,
+            "LWLock:WALWrite": 166,
+            "Lock:transactionid": 38
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1119.4831089452678,
+          "p50_ms": 5.989,
+          "p95_ms": 11.891,
+          "p99_ms": 15.488,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 622,
+            "Client:ClientRead": 43,
+            "IO:WalSync": 109,
+            "LWLock:BufferContent": 31,
+            "LWLock:LockManager": 7,
+            "LWLock:ProcArray": 5,
+            "LWLock:WALInsert": 1,
+            "LWLock:WALWrite": 157,
+            "Lock:transactionid": 40,
+            "Timeout:SpinDelay": 3
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1186.2667680409122,
+          "p50_ms": 5.551,
+          "p95_ms": 11.21,
+          "p99_ms": 15.941,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 601,
+            "Client:ClientRead": 62,
+            "IO:WalSync": 96,
+            "LWLock:BufferContent": 15,
+            "LWLock:LockManager": 16,
+            "LWLock:ProcArray": 1,
+            "LWLock:WALWrite": 148,
+            "Lock:transactionid": 31,
+            "Timeout:SpinDelay": 3
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 5.5672,
+          "ci95": 0.36355045430179267
+        },
+        "p95_ms": {
+          "mean": 11.0564,
+          "ci95": 0.852171233273313
+        },
+        "p99_ms": {
+          "mean": 15.933600000000002,
+          "ci95": 3.1523355180507293
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 1229.8365330867855,
+          "ci95": 124.17058921639023
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 2887
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 676
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 493
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 233
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 161
+        }
+      ]
+    },
+    {
+      "name": "conveyor batch=1",
+      "system": "loadgen",
+      "params": {
+        "batch": 1,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 128,
+        "producers": 4,
+        "workers": 4
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor batch=1 -workers 4 -batch 1",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 2139.3869426261886,
+          "p50_ms": 24.083,
+          "p95_ms": 32.026,
+          "p99_ms": 33.032,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 217,
+            "Client:ClientRead": 19,
+            "IO:WalSync": 65,
+            "LWLock:BufferContent": 5,
+            "LWLock:WALInsert": 1,
+            "LWLock:WALWrite": 99,
+            "LWLock:XactSLRU": 1,
+            "Lock:transactionid": 67
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2191.8335652399182,
+          "p50_ms": 10.245,
+          "p95_ms": 24.645,
+          "p99_ms": 25.765,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 188,
+            "Client:ClientRead": 16,
+            "IO:WalSync": 71,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 1,
+            "LWLock:LockManager": 2,
+            "LWLock:WALWrite": 108,
+            "Lock:transactionid": 76
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2274.8707334847736,
+          "p50_ms": 10.609,
+          "p95_ms": 19.629,
+          "p99_ms": 20.81,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 183,
+            "Client:ClientRead": 16,
+            "IO:WalSync": 64,
+            "IO:WalWrite": 2,
+            "LWLock:BufferContent": 1,
+            "LWLock:ProcArray": 1,
+            "LWLock:WALInsert": 1,
+            "LWLock:WALWrite": 103,
+            "Lock:transactionid": 80
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2330.78704560214,
+          "p50_ms": 4.813,
+          "p95_ms": 10.459,
+          "p99_ms": 13.267,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 182,
+            "Client:ClientRead": 13,
+            "IO:WalSync": 68,
+            "IO:WalWrite": 4,
+            "LWLock:BufferContent": 4,
+            "LWLock:LockManager": 1,
+            "LWLock:WALWrite": 104,
+            "Lock:transactionid": 75
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2285.1859716107783,
+          "p50_ms": 9.214,
+          "p95_ms": 17.687,
+          "p99_ms": 18.514,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 189,
+            "Client:ClientRead": 15,
+            "IO:WalInitSync": 1,
+            "IO:WalSync": 67,
+            "IO:WalWrite": 1,
+            "IPC:ProcarrayGroupUpdate": 1,
+            "LWLock:BufferContent": 3,
+            "LWLock:WALWrite": 80,
+            "Lock:transactionid": 85,
+            "Timeout:SpinDelay": 1
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 11.7928,
+          "ci95": 8.999848102083002
+        },
+        "p95_ms": {
+          "mean": 20.889200000000002,
+          "ci95": 9.985222391514244
+        },
+        "p99_ms": {
+          "mean": 22.2776,
+          "ci95": 9.317782120793645
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 2244.4128517127597,
+          "ci95": 95.85374483428282
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 959
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 494
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 383
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 335
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 79
+        }
+      ]
+    },
+    {
+      "name": "conveyor batch=4",
+      "system": "loadgen",
+      "params": {
+        "batch": 4,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 128,
+        "producers": 4,
+        "workers": 4
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor batch=4 -workers 4 -batch 4",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 2663.5021313736925,
+          "p50_ms": 3.557,
+          "p95_ms": 8.715,
+          "p99_ms": 11.164,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 112,
+            "Client:ClientRead": 9,
+            "IO:WalSync": 49,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 1,
+            "LWLock:WALWrite": 54,
+            "Lock:transactionid": 16
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2704.083824478557,
+          "p50_ms": 3.511,
+          "p95_ms": 7.661,
+          "p99_ms": 9.748,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 109,
+            "Client:ClientRead": 23,
+            "IO:WalSync": 54,
+            "LWLock:WALWrite": 60,
+            "Lock:transactionid": 18
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2378.0716811730904,
+          "p50_ms": 4.131,
+          "p95_ms": 9.135,
+          "p99_ms": 11.153,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 141,
+            "Client:ClientRead": 13,
+            "IO:WalSync": 63,
+            "LWLock:BufferContent": 7,
+            "LWLock:LockManager": 1,
+            "LWLock:WALWrite": 52,
+            "Lock:transactionid": 53,
+            "Lock:tuple": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2604.3236449872056,
+          "p50_ms": 3.728,
+          "p95_ms": 8.574,
+          "p99_ms": 10.522,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 102,
+            "Client:ClientRead": 8,
+            "IO:WalSync": 53,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 1,
+            "LWLock:WALWrite": 58,
+            "Lock:transactionid": 8
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2250.1427434302864,
+          "p50_ms": 3.998,
+          "p95_ms": 8.282,
+          "p99_ms": 10.801,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 132,
+            "Client:ClientRead": 19,
+            "IO:WalSync": 60,
+            "IO:WalWrite": 2,
+            "LWLock:BufferContent": 1,
+            "LWLock:WALWrite": 63,
+            "Lock:transactionid": 13
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 3.785,
+          "ci95": 0.33736909708389123
+        },
+        "p95_ms": {
+          "mean": 8.473399999999998,
+          "ci95": 0.6807805937981487
+        },
+        "p99_ms": {
+          "mean": 10.6776,
+          "ci95": 0.7255364773667554
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 2520.0248050885666,
+          "ci95": 244.03296128328785
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 596
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 287
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 279
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 108
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 72
+        }
+      ]
+    },
+    {
+      "name": "conveyor batch=16",
+      "system": "loadgen",
+      "params": {
+        "batch": 16,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 128,
+        "producers": 4,
+        "workers": 4
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor batch=16 -workers 4 -batch 16",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 2782.674511953674,
+          "p50_ms": 6.02,
+          "p95_ms": 11.791,
+          "p99_ms": 15.654,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 53,
+            "Client:ClientRead": 15,
+            "IO:WalSync": 43,
+            "IO:WalWrite": 2,
+            "LWLock:BufferContent": 4,
+            "LWLock:WALWrite": 32,
+            "Lock:transactionid": 3
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2282.2366995045077,
+          "p50_ms": 6.496,
+          "p95_ms": 12.354,
+          "p99_ms": 14.1,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 45,
+            "Client:ClientRead": 14,
+            "IO:WalSync": 49,
+            "LWLock:BufferContent": 1,
+            "LWLock:WALWrite": 28,
+            "Lock:transactionid": 2
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2941.6110417088644,
+          "p50_ms": 5.824,
+          "p95_ms": 11.419,
+          "p99_ms": 13.646,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 51,
+            "Client:ClientRead": 14,
+            "IO:WalInitSync": 1,
+            "IO:WalSync": 43,
+            "LWLock:WALWrite": 33,
+            "Lock:transactionid": 11
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2862.951921559435,
+          "p50_ms": 5.932,
+          "p95_ms": 11.173,
+          "p99_ms": 12.31,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 59,
+            "Client:ClientRead": 2,
+            "IO:WalSync": 45,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 1,
+            "LWLock:WALWrite": 36
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2939.7231795263356,
+          "p50_ms": 5.971,
+          "p95_ms": 11.078,
+          "p99_ms": 12.587,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 52,
+            "Client:ClientRead": 10,
+            "IO:WalSync": 53,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 1,
+            "LWLock:WALWrite": 37,
+            "Lock:transactionid": 5
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 6.0485999999999995,
+          "ci95": 0.3231669404121655
+        },
+        "p95_ms": {
+          "mean": 11.562999999999999,
+          "ci95": 0.6467919156798418
+        },
+        "p99_ms": {
+          "mean": 13.6594,
+          "ci95": 1.6590704487636923
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 2761.8394708505634,
+          "ci95": 342.6066933774991
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 260
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 233
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 166
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 55
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 21
+        }
+      ]
+    },
+    {
+      "name": "conveyor batch=32",
+      "system": "loadgen",
+      "params": {
+        "batch": 32,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 128,
+        "producers": 4,
+        "workers": 4
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor batch=32 -workers 4 -batch 32",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 2939.4486410634254,
+          "p50_ms": 6.715,
+          "p95_ms": 11.887,
+          "p99_ms": 13.035,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 58,
+            "Client:ClientRead": 10,
+            "IO:WalSync": 41,
+            "LWLock:WALWrite": 26,
+            "Lock:transactionid": 11,
+            "Lock:tuple": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2780.765169247796,
+          "p50_ms": 6.84,
+          "p95_ms": 11.887,
+          "p99_ms": 12.908,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 44,
+            "Client:ClientRead": 17,
+            "IO:WalSync": 45,
+            "IO:WalWrite": 1,
+            "LWLock:WALWrite": 32,
+            "Lock:transactionid": 2
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2155.042175398359,
+          "p50_ms": 7.675,
+          "p95_ms": 13.138,
+          "p99_ms": 18.61,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 72,
+            "Client:ClientRead": 13,
+            "IO:DataFileExtend": 1,
+            "IO:WalSync": 64,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 2,
+            "LWLock:WALWrite": 52,
+            "Lock:transactionid": 13
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2248.6530576617056,
+          "p50_ms": 7.708,
+          "p95_ms": 12.797,
+          "p99_ms": 13.941,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 53,
+            "Client:ClientRead": 16,
+            "IO:WalSync": 55,
+            "IO:WalWrite": 1,
+            "LWLock:WALWrite": 38,
+            "Lock:transactionid": 3
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2870.9696520564216,
+          "p50_ms": 6.72,
+          "p95_ms": 11.864,
+          "p99_ms": 12.916,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 31,
+            "Client:ClientRead": 12,
+            "IO:WalSync": 46,
+            "LWLock:WALWrite": 16
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 7.131600000000001,
+          "ci95": 0.6377316104338565
+        },
+        "p95_ms": {
+          "mean": 12.314600000000002,
+          "ci95": 0.7550059650536276
+        },
+        "p99_ms": {
+          "mean": 14.282,
+          "ci95": 3.0508673194376703
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 2598.9757390855416,
+          "ci95": 457.30455723656377
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 258
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 251
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 164
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 68
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 29
+        }
+      ]
+    },
+    {
+      "name": "conveyor payload=1024",
+      "system": "loadgen",
+      "params": {
+        "batch": 8,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 1024,
+        "producers": 4,
+        "workers": 4
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor payload=1024 -workers 4 -batch 8 -payload 1024",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 2621.1790160984388,
+          "p50_ms": 4.998,
+          "p95_ms": 9.668,
+          "p99_ms": 14.225,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 84,
+            "Client:ClientRead": 15,
+            "IO:WalSync": 45,
+            "IO:WalWrite": 3,
+            "LWLock:BufferContent": 6,
+            "LWLock:WALWrite": 34,
+            "Lock:transactionid": 10,
+            "Timeout:SpinDelay": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2661.474428142497,
+          "p50_ms": 4.772,
+          "p95_ms": 9.343,
+          "p99_ms": 11.515,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 122,
+            "Client:ClientRead": 19,
+            "IO:DataFileExtend": 2,
+            "IO:WalSync": 50,
+            "LWLock:BufferContent": 3,
+            "LWLock:WALWrite": 39,
+            "LWLock:XactSLRU": 1,
+            "Lock:transactionid": 41
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2699.9446836683182,
+          "p50_ms": 4.8,
+          "p95_ms": 9.225,
+          "p99_ms": 11.506,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 98,
+            "Client:ClientRead": 12,
+            "IO:WalSync": 55,
+            "LWLock:BufferContent": 3,
+            "LWLock:WALWrite": 46,
+            "Lock:transactionid": 31
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2623.19593798109,
+          "p50_ms": 5.095,
+          "p95_ms": 9.996,
+          "p99_ms": 12.64,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 87,
+            "Client:ClientRead": 10,
+            "IO:WalInitSync": 1,
+            "IO:WalSync": 52,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 8,
+            "LWLock:WALWrite": 42,
+            "Lock:transactionid": 44,
+            "Lock:tuple": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2537.2946634825735,
+          "p50_ms": 4.818,
+          "p95_ms": 10.332,
+          "p99_ms": 12.228,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 91,
+            "Client:ClientRead": 9,
+            "IO:WalSync": 51,
+            "IO:WalWrite": 2,
+            "LWLock:BufferContent": 2,
+            "LWLock:WALWrite": 46,
+            "Lock:transactionid": 1
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 4.896599999999999,
+          "ci95": 0.1763133736758502
+        },
+        "p95_ms": {
+          "mean": 9.7128,
+          "ci95": 0.5690186538642125
+        },
+        "p99_ms": {
+          "mean": 12.4228,
+          "ci95": 1.3876766693805294
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 2628.6177458745833,
+          "ci95": 74.98214362158441
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 482
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 253
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 207
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 127
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 65
+        }
+      ]
+    },
+    {
+      "name": "conveyor payload=16384",
+      "system": "loadgen",
+      "params": {
+        "batch": 8,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 16384,
+        "producers": 4,
+        "workers": 4
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor payload=16384 -workers 4 -batch 8 -payload 16384",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 1567.9777646202144,
+          "p50_ms": 6.72,
+          "p95_ms": 13.489,
+          "p99_ms": 16.472,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 190,
+            "Client:ClientRead": 17,
+            "IO:WalInitSync": 1,
+            "IO:WalSync": 74,
+            "LWLock:BufferContent": 4,
+            "LWLock:WALWrite": 51,
+            "Lock:transactionid": 38,
+            "Lock:tuple": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1177.0115808376336,
+          "p50_ms": 8.14,
+          "p95_ms": 15.954,
+          "p99_ms": 24.979,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 234,
+            "Client:ClientRead": 18,
+            "IO:WalSync": 108,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 3,
+            "LWLock:LockManager": 2,
+            "LWLock:WALWrite": 103,
+            "Lock:transactionid": 30,
+            "Lock:tuple": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1576.018203798263,
+          "p50_ms": 6.775,
+          "p95_ms": 13.485,
+          "p99_ms": 16.102,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 129,
+            "Client:ClientRead": 11,
+            "IO:WalSync": 79,
+            "IO:WalWrite": 1,
+            "LWLock:WALWrite": 92,
+            "Lock:object": 1,
+            "Lock:transactionid": 28
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1953.1296081651694,
+          "p50_ms": 6.09,
+          "p95_ms": 12.075,
+          "p99_ms": 14.488,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 134,
+            "Client:ClientRead": 9,
+            "IO:WalSync": 64,
+            "LWLock:BufferContent": 4,
+            "LWLock:WALWrite": 39,
+            "Lock:transactionid": 48
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1898.5916338392578,
+          "p50_ms": 6.338,
+          "p95_ms": 12.137,
+          "p99_ms": 13.857,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 145,
+            "Client:ClientRead": 13,
+            "IO:WalInitSync": 1,
+            "IO:WalSync": 57,
+            "IO:WalWrite": 2,
+            "LWLock:WALWrite": 41,
+            "Lock:transactionid": 40,
+            "Lock:tuple": 1
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 6.812599999999999,
+          "ci95": 0.9852600849835339
+        },
+        "p95_ms": {
+          "mean": 13.428,
+          "ci95": 1.9516026307209162
+        },
+        "p99_ms": {
+          "mean": 17.1796,
+          "ci95": 5.578894718619679
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 1634.5457582521078,
+          "ci95": 386.85638694470543
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 832
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 382
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 326
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 184
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 68
+        }
+      ]
+    },
+    {
+      "name": "conveyor payload=65536",
+      "system": "loadgen",
+      "params": {
+        "batch": 8,
+        "batched_complete": true,
+        "jobs": 2000,
+        "notify_debounce": "10ms",
+        "payload_bytes": 65536,
+        "producers": 4,
+        "workers": 4
+      },
+      "command": "go run ./cmd/loadgen -dsn postgres://conveyor:conveyor@127.0.0.1:55499/conveyor?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name conveyor payload=65536 -workers 4 -batch 8 -payload 65536",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 1074.0934500237408,
+          "p50_ms": 9.907,
+          "p95_ms": 16.892,
+          "p99_ms": 20.007,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 286,
+            "Client:ClientRead": 16,
+            "IO:WalSync": 90,
+            "IO:WalWrite": 2,
+            "LWLock:LockManager": 1,
+            "LWLock:WALWrite": 45,
+            "Lock:transactionid": 39
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1044.845281922766,
+          "p50_ms": 9.62,
+          "p95_ms": 16.844,
+          "p99_ms": 19.535,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 302,
+            "Client:ClientRead": 15,
+            "IO:WalSync": 99,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 3,
+            "LWLock:LockManager": 2,
+            "LWLock:WALWrite": 58,
+            "Lock:transactionid": 43,
+            "Lock:tuple": 2,
+            "Timeout:VacuumDelay": 57
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1083.896061683983,
+          "p50_ms": 9.694,
+          "p95_ms": 16.82,
+          "p99_ms": 19.233,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 284,
+            "Client:ClientRead": 15,
+            "IO:WalInitSync": 1,
+            "IO:WalSync": 87,
+            "IO:WalWrite": 4,
+            "LWLock:BufferContent": 2,
+            "LWLock:LockManager": 1,
+            "LWLock:WALWrite": 58,
+            "Lock:transactionid": 34,
+            "Lock:tuple": 1,
+            "Timeout:SpinDelay": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1056.3216624361592,
+          "p50_ms": 9.74,
+          "p95_ms": 16.758,
+          "p99_ms": 20.026,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 282,
+            "Client:ClientRead": 14,
+            "IO:WalSync": 101,
+            "IO:WalWrite": 1,
+            "LWLock:BufferContent": 2,
+            "LWLock:WALWrite": 45,
+            "Lock:transactionid": 35,
+            "Lock:tuple": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1045.2720615254577,
+          "p50_ms": 9.823,
+          "p95_ms": 16.811,
+          "p99_ms": 20.032,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 296,
+            "Client:ClientRead": 13,
+            "IO:WalSync": 102,
+            "IO:WalWrite": 3,
+            "LWLock:BufferContent": 1,
+            "LWLock:WALWrite": 53,
+            "Lock:transactionid": 44,
+            "Lock:tuple": 1
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 9.756800000000002,
+          "ci95": 0.13863723096138375
+        },
+        "p95_ms": {
+          "mean": 16.825,
+          "ci95": 0.060692274038793716
+        },
+        "p99_ms": {
+          "mean": 19.7666,
+          "ci95": 0.45355337695772907
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 1060.8857035184215,
+          "ci95": 21.733018055825724
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 1450
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 479
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 259
+        },
+        {
+          "event": "Lock:transactionid",
+          "samples": 195
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 73
+        }
+      ]
+    },
+    {
+      "name": "river default (fetch cooldown 100ms)",
+      "system": "riverbench",
+      "params": {
+        "fetch_cooldown": "100ms",
+        "jobs": 2000,
+        "max_workers": 32,
+        "payload_bytes": 128,
+        "producers": 4,
+        "river": "v0.49.0"
+      },
+      "command": "go run ./cmd/riverbench -dsn postgres://conveyor:conveyor@127.0.0.1:55499/river?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name river default (fetch cooldown 100ms) -max-workers 32 -fetch-cooldown 100ms",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 321.05547846405295,
+          "p50_ms": 2785.097,
+          "p95_ms": 5325.243,
+          "p99_ms": 5594.067,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 47,
+            "Client:ClientRead": 5,
+            "IO:WalInitSync": 1,
+            "IO:WalInitWrite": 1,
+            "IO:WalSync": 41,
+            "LWLock:WALWrite": 11
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 321.26372726394777,
+          "p50_ms": 2765.522,
+          "p95_ms": 5298.977,
+          "p99_ms": 5571.165,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 77,
+            "IO:WalSync": 47,
+            "LWLock:WALWrite": 13,
+            "Timeout:VacuumDelay": 18
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 321.2495794465537,
+          "p50_ms": 2788.694,
+          "p95_ms": 5337.25,
+          "p99_ms": 5603.396,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 67,
+            "Client:ClientRead": 5,
+            "IO:WalInitSync": 1,
+            "IO:WalSync": 42,
+            "IO:WalWrite": 1,
+            "LWLock:WALWrite": 14
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 321.2483260201487,
+          "p50_ms": 2801.257,
+          "p95_ms": 5336.384,
+          "p99_ms": 5606.741,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 63,
+            "Client:ClientRead": 4,
+            "IO:DataFileExtend": 2,
+            "IO:WalSync": 48,
+            "LWLock:WALWrite": 12
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 321.21726995896563,
+          "p50_ms": 2793.943,
+          "p95_ms": 5340.781,
+          "p99_ms": 5608.632,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 75,
+            "Client:ClientRead": 2,
+            "IO:DataFileExtend": 1,
+            "IO:WalSync": 45,
+            "IO:WalWrite": 1,
+            "LWLock:WALWrite": 20
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 2786.9026,
+          "ci95": 16.646922240925576
+        },
+        "p95_ms": {
+          "mean": 5327.727,
+          "ci95": 21.221161459460266
+        },
+        "p99_ms": {
+          "mean": 5596.8002,
+          "ci95": 19.101516965504644
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 321.2068762307337,
+          "ci95": 0.10716043730700751
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 329
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 223
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 70
+        },
+        {
+          "event": "Timeout:VacuumDelay",
+          "samples": 18
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 16
+        }
+      ]
+    },
+    {
+      "name": "river fetch cooldown 1ms",
+      "system": "riverbench",
+      "params": {
+        "fetch_cooldown": "1ms",
+        "jobs": 2000,
+        "max_workers": 32,
+        "payload_bytes": 128,
+        "producers": 4,
+        "river": "v0.49.0"
+      },
+      "command": "go run ./cmd/riverbench -dsn postgres://conveyor:conveyor@127.0.0.1:55499/river?sslmode=disable -out results/bench-2026-10-23.json -reps 5 -jobs 2000 -name river fetch cooldown 1ms -max-workers 32 -fetch-cooldown 1ms",
+      "reps": [
+        {
+          "throughput_jobs_per_sec": 1133.8808824082587,
+          "p50_ms": 2.4,
+          "p95_ms": 3.977,
+          "p99_ms": 7.673,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 70,
+            "Client:ClientRead": 4,
+            "IO:WalSync": 42,
+            "IO:WalWrite": 1,
+            "LWLock:WALWrite": 18
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 1126.228486090828,
+          "p50_ms": 2.411,
+          "p95_ms": 3.868,
+          "p99_ms": 4.946,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 51,
+            "Client:ClientRead": 3,
+            "IO:WalSync": 34,
+            "LWLock:WALWrite": 21
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2187.6322105780987,
+          "p50_ms": 2.796,
+          "p95_ms": 5.762,
+          "p99_ms": 33.633,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 83,
+            "Client:ClientRead": 7,
+            "IO:WalInitSync": 1,
+            "IO:WalSync": 45,
+            "LWLock:WALWrite": 51,
+            "Lock:object": 1
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2589.165744944159,
+          "p50_ms": 2.376,
+          "p95_ms": 3.978,
+          "p99_ms": 6.541,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 49,
+            "Client:ClientRead": 4,
+            "IO:WalSync": 33,
+            "LWLock:WALWrite": 26
+          }
+        },
+        {
+          "throughput_jobs_per_sec": 2566.8236439751436,
+          "p50_ms": 2.314,
+          "p95_ms": 3.895,
+          "p99_ms": 8.554,
+          "errors": 0,
+          "wait_events": {
+            "CPU": 50,
+            "Client:ClientRead": 4,
+            "IO:WalSync": 41,
+            "LWLock:WALWrite": 31,
+            "Lock:object": 1
+          }
+        }
+      ],
+      "summary": {
+        "p50_ms": {
+          "mean": 2.4593999999999996,
+          "ci95": 0.2382086230835482
+        },
+        "p95_ms": {
+          "mean": 4.296,
+          "ci95": 1.0192166319427873
+        },
+        "p99_ms": {
+          "mean": 12.269400000000001,
+          "ci95": 14.920596495842684
+        },
+        "throughput_jobs_per_sec": {
+          "mean": 1920.7461935992974,
+          "ci95": 917.728201566461
+        }
+      },
+      "top_wait_events": [
+        {
+          "event": "CPU",
+          "samples": 303
+        },
+        {
+          "event": "IO:WalSync",
+          "samples": 195
+        },
+        {
+          "event": "LWLock:WALWrite",
+          "samples": 147
+        },
+        {
+          "event": "Client:ClientRead",
+          "samples": 22
+        },
+        {
+          "event": "Lock:object",
+          "samples": 2
+        }
+      ]
+    }
+  ]
+}
