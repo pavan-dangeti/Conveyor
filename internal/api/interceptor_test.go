@@ -11,16 +11,21 @@ import (
 )
 
 func TestClientIP(t *testing.T) {
-	withPeer := peer.NewContext(context.Background(), &peer.Peer{Addr: &net.TCPAddr{IP: net.IPv4(10, 0, 0, 7), Port: 5555}})
+	from := func(ip net.IP) context.Context {
+		return peer.NewContext(context.Background(), &peer.Peer{Addr: &net.TCPAddr{IP: ip, Port: 5555}})
+	}
+	gateway, proxy, public := from(net.IPv4(127, 0, 0, 1)), from(net.IPv4(172, 18, 0, 5)), from(net.IPv4(203, 0, 113, 7))
+	xff := func(v string) metadata.MD { return metadata.Pairs("x-forwarded-for", v) }
 	for name, c := range map[string]struct {
 		ctx  context.Context
 		md   metadata.MD
 		want string
 	}{
-		"first forwarded hop": {context.Background(), metadata.Pairs("x-forwarded-for", "203.0.113.9, 10.0.0.1"), "203.0.113.9"},
-		"forwarded with port": {context.Background(), metadata.Pairs("x-forwarded-for", "203.0.113.9:443"), "203.0.113.9"},
-		"peer address":        {withPeer, metadata.MD{}, "10.0.0.7"},
-		"nothing to go on":    {context.Background(), metadata.MD{}, "unknown"},
+		"gateway forwards the first hop":   {gateway, xff("198.51.100.9, 172.18.0.5"), "198.51.100.9"},
+		"proxy on the container network":   {proxy, xff("198.51.100.9:443"), "198.51.100.9"},
+		"direct caller cannot forge a hop": {public, xff("10.9.9.9"), "203.0.113.7"},
+		"direct caller without header":     {public, metadata.MD{}, "203.0.113.7"},
+		"no peer at all":                   {context.Background(), xff("10.9.9.9"), "unknown"},
 	} {
 		if got := clientIP(c.ctx, c.md); got != c.want {
 			t.Errorf("%s: got %q, want %q", name, got, c.want)

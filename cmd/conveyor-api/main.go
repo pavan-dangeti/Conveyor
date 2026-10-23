@@ -5,12 +5,14 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -47,6 +49,9 @@ func run(logger *slog.Logger) error {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		return errors.New("DATABASE_URL not set")
+	}
+	if err := refusePlaceholderSecrets(); err != nil {
+		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -178,6 +183,20 @@ func runMigrations(ctx context.Context, dsn string) error {
 	}
 	defer func() { _ = db.Close() }()
 	return migrate.Up(ctx, db)
+}
+
+// refusePlaceholderSecrets stops a public deployment (DOMAIN set to a real
+// host name) from starting with the change-me values from .env.example.
+func refusePlaceholderSecrets() error {
+	if d := os.Getenv("DOMAIN"); d == "" || d == "localhost" {
+		return nil
+	}
+	for _, k := range []string{"CONVEYOR_API_TOKEN", "DATABASE_URL", "MIGRATIONS_DATABASE_URL"} {
+		if strings.Contains(os.Getenv(k), "change-me") {
+			return fmt.Errorf("%s still holds a change-me placeholder; set real secrets in .env before serving %s", k, os.Getenv("DOMAIN"))
+		}
+	}
+	return nil
 }
 
 // loopback turns a listen address like ":9090" into a dialable one.
