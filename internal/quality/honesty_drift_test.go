@@ -1,3 +1,4 @@
+// Package quality holds repository-level checks that run with the tests.
 package quality
 
 import (
@@ -6,176 +7,142 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
+	"sort"
 	"strings"
 	"testing"
 )
 
-type runRecord struct {
-	System     string  `json:"system"`
-	Jobs       int64   `json:"jobs"`
-	Throughput float64 `json:"throughput_jobs_per_sec"`
-	P50        float64 `json:"p50_ms"`
-	P95        float64 `json:"p95_ms"`
-	P99        float64 `json:"p99_ms"`
+// The README quotes results only inside marked tables. Every row there is
+// rebuilt, byte for byte, from the newest committed results file, so a
+// number cannot be edited by hand, rounded up, or left stale.
+
+type stat struct {
+	Mean float64 `json:"mean"`
+	CI95 float64 `json:"ci95"`
 }
 
-type resultTuple struct {
-	jobs          int64
-	throughput    float64
-	p50, p95, p99 float64
+type benchFile struct {
+	Configs []struct {
+		Name    string          `json:"name"`
+		Summary map[string]stat `json:"summary"`
+	} `json:"configs"`
 }
 
-var numberRe = regexp.MustCompile(`[0-9]+(?:\.[0-9]+)?`)
+type faultFile struct {
+	Runs []struct {
+		Run     int     `json:"run"`
+		Seconds float64 `json:"seconds_to_drain"`
+		Check   struct {
+			Total      int            `json:"total"`
+			ByState    map[string]int `json:"by_state"`
+			LedgerRows int            `json:"ledger_rows"`
+			Violations []string       `json:"violations"`
+		} `json:"check"`
+		LeaseExpirations int64 `json:"lease_expirations"`
+		Reclaimed        int64 `json:"jobs_claimed_more_than_once"`
+		MaxFencingToken  int64 `json:"max_fencing_token"`
+	} `json:"runs"`
+}
 
-// TestReadmeFiguresMatchResults fails when any number quoted in the README
-// results table disagrees with the committed result files, or when a
-// committed run is missing from the table. The README is the human-facing
-// summary of results/benchmarks-*.json, so both must agree exactly.
-func TestReadmeFiguresMatchResults(t *testing.T) {
-	root := repoRoot(t)
-	readme, err := os.ReadFile(filepath.Join(root, "README.md"))
-	if err != nil {
-		t.Fatalf("read README: %v", err)
-	}
-	entries, err := os.ReadDir(filepath.Join(root, "results"))
-	if err != nil {
-		t.Fatalf("read results: %v", err)
-	}
-	var path string
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "benchmarks") {
-			path = filepath.Join(root, "results", e.Name())
-			break
-		}
-	}
-	if path == "" {
-		t.Skip("no results/benchmarks-*.json committed")
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	var file struct {
-		Runs []runRecord `json:"runs"`
-	}
-	if err := json.Unmarshal(raw, &file); err != nil {
-		t.Fatalf("parse %s: %v", path, err)
-	}
+func benchRow(name string, s map[string]stat) string {
+	t, p50, p95, p99 := s["throughput_jobs_per_sec"], s["p50_ms"], s["p95_ms"], s["p99_ms"]
+	return fmt.Sprintf("| %s | %.0f ± %.0f | %.1f | %.1f | %.1f ± %.1f |", name, t.Mean, t.CI95, p50.Mean, p95.Mean, p99.Mean, p99.CI95)
+}
 
-	committed := make(map[resultTuple]bool, len(file.Runs))
-
-	table := parseResultsTable(t, string(readme))
-	if len(table) == 0 {
-		t.Fatalf("no results table found in README")
+func TestReadmeBenchmarkRowsMatchResults(t *testing.T) {
+	var f benchFile
+	path := newest(t, "bench-*.json", &f)
+	want := map[string]string{}
+	for _, c := range f.Configs {
+		want[c.Name] = benchRow(c.Name, c.Summary)
 	}
-	for _, r := range table {
-		committed[r.tuple()] = true
+	rows := markedRows(t, "bench")
+	if len(rows) < 3 {
+		t.Fatalf("README benchmark table has %d rows, want at least the baseline, the before and River", len(rows))
 	}
-
-	for _, r := range file.Runs {
-		tuple := resultTuple{r.Jobs, r.Throughput, r.P50, r.P95, r.P99}
-		if !committed[tuple] {
-			t.Errorf("committed run %q is missing from the README table (jobs=%d throughput=%.0f p50=%.0f p95=%.0f p99=%.0f)",
-				r.System, r.Jobs, r.Throughput, r.P50, r.P95, r.P99)
-		}
-	}
-	for _, r := range table {
-		if !committed[r.tuple()] {
-			t.Errorf("README quotes a result with no matching run: jobs=%d throughput=%.0f p50=%.0f p95=%.0f p99=%.0f",
-				r.jobs, r.throughput, r.p50, r.p95, r.p99)
+	for _, row := range rows {
+		name := strings.TrimSpace(strings.Split(row, "|")[1])
+		exp, ok := want[name]
+		switch {
+		case !ok:
+			t.Errorf("README row %q names no configuration in %s", name, path)
+		case row != exp:
+			t.Errorf("README row drifted from %s:\n got: %s\nwant: %s", path, row, exp)
 		}
 	}
 }
 
-type resultsRow struct {
-	label      string
-	jobs       int64
-	throughput float64
-	p50        float64
-	p95        float64
-	p99        float64
+// Figures quoted outside the tables, such as the headline summary, must be
+// copies of a table cell: every "X ± Y" in the README appears in a row.
+func TestReadmeQuotedFiguresComeFromTheTable(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := strings.Join(markedRows(t, "bench"), "\n")
+	for _, fig := range regexp.MustCompile(`\d+(?:\.\d+)? ± \d+(?:\.\d+)?`).FindAllString(string(b), -1) {
+		if !strings.Contains(rows, fig) {
+			t.Errorf("README quotes %q, which is not in the benchmark table", fig)
+		}
+	}
 }
 
-func (r resultsRow) tuple() resultTuple {
-	return resultTuple{r.jobs, r.throughput, r.p50, r.p95, r.p99}
+func TestReadmeFaultRowsMatchResults(t *testing.T) {
+	var f faultFile
+	path := newest(t, "fault-*.json", &f)
+	var want []string
+	for _, r := range f.Runs {
+		want = append(want, fmt.Sprintf("| %d | %d | %d | %d | %d | %d | %d | %d | %.0f s |",
+			r.Run, r.Check.Total, r.Check.ByState["completed"], r.Check.LedgerRows, len(r.Check.Violations),
+			r.LeaseExpirations, r.Reclaimed, r.MaxFencingToken, r.Seconds))
+	}
+	got := markedRows(t, "fault")
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("README fault table drifted from %s:\n got:\n%s\nwant:\n%s", path, strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
 }
 
-// parseResultsTable extracts the figures from the first markdown table after
-// the "## Results" heading and returns them. The table's columns are
-// label | workers | jobs | throughput | p50 | p95 | p99.
-func parseResultsTable(t *testing.T, readme string) []resultsRow {
+func newest(t *testing.T, pattern string, v any) string {
 	t.Helper()
-	var rows []resultsRow
-	for _, line := range strings.Split(readme, "\n") {
+	paths, _ := filepath.Glob(filepath.Join("..", "..", "results", pattern))
+	if len(paths) == 0 {
+		t.Fatalf("no results/%s committed", pattern)
+	}
+	sort.Strings(paths) // names carry ISO dates, so the last is the newest
+	path := paths[len(paths)-1]
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, v); err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	return path
+}
+
+// markedRows returns the data rows (header and separator dropped) of the
+// table between <!-- results:NAME --> and <!-- /results:NAME --> in README.md.
+func markedRows(t *testing.T, name string) []string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	start := strings.Index(s, "<!-- results:"+name+" -->")
+	end := strings.Index(s, "<!-- /results:"+name+" -->")
+	if start < 0 || end < start {
+		t.Fatalf("README has no <!-- results:%s --> block", name)
+	}
+	var rows []string
+	for _, line := range strings.Split(s[start:end], "\n") {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "|") {
-			continue
+		if strings.HasPrefix(line, "|") && !strings.Contains(line, "---") {
+			rows = append(rows, line)
 		}
-		cells := splitRow(line)
-		if len(cells) < 7 {
-			continue
-		}
-		switch strings.TrimSpace(cells[0]) {
-		case "system":
-			continue // header row
-		}
-		if strings.Contains(cells[0], "---") {
-			continue // separator row
-		}
-		row := resultsRow{label: strings.TrimSpace(cells[0])}
-		if v, err := strconv.ParseInt(strings.TrimSpace(cells[2]), 10, 64); err == nil {
-			row.jobs = v
-		}
-		for i, cell := range []string{cells[3], cells[4], cells[5], cells[6]} {
-			v, err := parseNumber(cell)
-			if err != nil {
-				continue
-			}
-			switch i {
-			case 0:
-				row.throughput = v
-			case 1:
-				row.p50 = v
-			case 2:
-				row.p95 = v
-			case 3:
-				row.p99 = v
-			}
-		}
-		rows = append(rows, row)
 	}
-	return rows
-}
-
-func splitRow(line string) []string {
-	parts := strings.Split(line, "|")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts[1 : len(parts)-1] {
-		out = append(out, strings.TrimSpace(strings.Trim(p, "`* ")))
+	if len(rows) == 0 {
+		return nil
 	}
-	return out
-}
-
-func parseNumber(cell string) (float64, error) {
-	m := numberRe.FindString(cell)
-	if m == "" {
-		return 0, fmt.Errorf("no number in %q", cell)
-	}
-	v, err := strconv.ParseFloat(m, 64)
-	if err != nil {
-		return 0, err
-	}
-	return v, nil
-}
-
-// repoRoot is the repository root: this test file lives at
-// <root>/internal/quality, so three directory steps up is the root.
-func repoRoot(t *testing.T) string {
-	t.Helper()
-	dir, err := filepath.Abs("honesty_drift_test.go")
-	if err != nil {
-		t.Fatalf("abs: %v", err)
-	}
-	return filepath.Dir(filepath.Dir(filepath.Dir(dir)))
+	return rows[1:]
 }
