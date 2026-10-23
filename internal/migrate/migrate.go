@@ -1,7 +1,7 @@
 // Package migrate applies versioned SQL migrations from the embedded
 // migrations directory. Each migration runs in its own transaction and is
-// recorded in schema_migrations. ponytail: minimal runner, no down-migrations
-// yet; add golang-migrate if we need reversibility tooling.
+// recorded in schema_migrations. Migrations are forward-only by design (see
+// docs/runbook.md): rollbacks change the binary, never the schema.
 package migrate
 
 import (

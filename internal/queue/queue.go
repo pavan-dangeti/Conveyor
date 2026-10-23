@@ -66,28 +66,37 @@ type execer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
-// Debouncing pg_notify was the throughput fix measured in Phase 5: one
-// NOTIFY per insert serialises every enqueue on the notification queue lock,
-// while idle workers only need one wake-up per burst.
+// Wake-ups are debounced: idle workers need one NOTIFY per burst of
+// enqueues, not one per row. The debounce has a trailing edge, so an enqueue
+// that lands inside the window still produces a wake-up when the window
+// closes instead of waiting for the workers' poll interval.
 var (
 	notifyDebounce atomic.Int64
 	lastNotifyAt   atomic.Int64
+	notifyPending  atomic.Bool
 )
 
-func init() { notifyDebounce.Store(int64(50 * time.Millisecond)) }
+func init() { notifyDebounce.Store(int64(10 * time.Millisecond)) }
 
 // SetNotifyDebounce changes the minimum gap between wake-up notifications;
-// 0 notifies on every enqueue. Used by the benchmark to reproduce the
-// before/after comparison.
+// 0 notifies on every enqueue.
 func SetNotifyDebounce(d time.Duration) { notifyDebounce.Store(int64(d)) }
 
-func notifyListeners(ctx context.Context, db execer) {
+func notifyListeners(ctx context.Context, db *sql.DB) {
+	window := notifyDebounce.Load()
 	now := time.Now().UnixNano()
 	prev := lastNotifyAt.Load()
-	if now-prev < notifyDebounce.Load() || !lastNotifyAt.CompareAndSwap(prev, now) {
+	if now-prev >= window && lastNotifyAt.CompareAndSwap(prev, now) {
+		_, _ = db.ExecContext(ctx, `SELECT pg_notify('jobs_available', '')`)
 		return
 	}
-	_, _ = db.ExecContext(ctx, `SELECT pg_notify('jobs_available', '')`)
+	if notifyPending.CompareAndSwap(false, true) {
+		time.AfterFunc(time.Duration(prev+window-now), func() {
+			lastNotifyAt.Store(time.Now().UnixNano())
+			notifyPending.Store(false)
+			_, _ = db.ExecContext(context.Background(), `SELECT pg_notify('jobs_available', '')`)
+		})
+	}
 }
 
 type EnqueueParams struct {
@@ -171,7 +180,7 @@ var (
 // Dequeue claims up to batch due jobs in priority order, setting lease
 // owner, expiry and a new fencing token (lease_version + 1). It skips jobs
 // with unfinished dependencies and respects the queue's concurrency and
-// rate limits. ponytail: the concurrency check counts running rows without
+// rate limits. Known limit: the concurrency check counts running rows without
 // locking the queue row, so concurrent dequeuers can briefly over-admit by
 // up to one batch each; lock the queues row if that ever matters.
 func Dequeue(ctx context.Context, db *sql.DB, queueName, owner string, lease time.Duration, batch int) ([]Job, error) {
@@ -275,6 +284,33 @@ WHERE id = $1 AND state = ANY($5) AND lease_owner = $2 AND lease_version = $3`,
 		metrics.Observe(string(sm.Complete), start, 1)
 	}
 	return err
+}
+
+// CompleteMany completes several jobs held by owner in one statement and
+// one commit. Each row is still guarded by its own fencing token; it
+// returns the IDs that actually completed, so a stale entry is simply
+// absent from the result.
+func CompleteMany(ctx context.Context, db *sql.DB, owner string, ids, versions []int64) ([]int64, error) {
+	start := time.Now()
+	rows, err := db.QueryContext(ctx, `
+UPDATE jobs SET state = $1, lease_expiry = NULL, updated_at = now()
+FROM unnest($2::bigint[], $3::bigint[]) AS c(id, version)
+WHERE jobs.id = c.id AND jobs.lease_version = c.version AND jobs.lease_owner = $4 AND jobs.state = ANY($5)
+RETURNING jobs.id`, string(completeTo), ids, versions, owner, completeFrom)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var done []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return done, err
+		}
+		done = append(done, id)
+	}
+	metrics.Observe(string(sm.Complete), start, int64(len(done)))
+	return done, rows.Err()
 }
 
 // Fail records the error and moves the job to retryable with backoff, or to
