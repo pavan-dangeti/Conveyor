@@ -3,52 +3,22 @@ package api_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	conveyorv1 "github.com/pavan-dangeti/Conveyor/api/proto/conveyor/v1"
 	"github.com/pavan-dangeti/Conveyor/internal/api"
-	"github.com/pavan-dangeti/Conveyor/internal/migrate"
-	"github.com/pavan-dangeti/Conveyor/internal/store"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/pavan-dangeti/Conveyor/internal/pgtest"
 )
 
 func setup(t *testing.T) (*sql.DB, http.Handler) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	t.Cleanup(cancel)
-	c, err := postgres.Run(ctx, "postgres:17-alpine",
-		postgres.WithDatabase("conveyor"),
-		postgres.WithUsername("conveyor"),
-		postgres.WithPassword("conveyor"),
-		testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = c.Terminate(context.Background()) })
-	dsn, err := c.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := store.Open(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := migrate.Up(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO queues(name) VALUES ('q1')`); err != nil {
-		t.Fatal(err)
-	}
+	db, _ := pgtest.Start(t)
 	mux := runtime.NewServeMux()
 	if err := conveyorv1.RegisterConveyorHandlerServer(context.Background(), mux, api.NewServer(db)); err != nil {
 		t.Fatal(err)
@@ -102,8 +72,8 @@ func TestHTTPGatewayEndToEnd(t *testing.T) {
 	}
 }
 
-// TestOperatorAndStatsEndpoints covers the operator RPCs added with the
-// Phase-7 WIP: run_at forwarding, manual discard, and the stats RPC.
+// TestOperatorAndStatsEndpoints covers run_at forwarding, manual discard
+// and the stats RPC through the HTTP gateway.
 func TestOperatorAndStatsEndpoints(t *testing.T) {
 	_, h := setup(t)
 	code, resp := do(t, h, "POST", "/v1/jobs",
@@ -132,13 +102,12 @@ func TestOperatorAndStatsEndpoints(t *testing.T) {
 
 func extractID(t *testing.T, resp string) int64 {
 	t.Helper()
-	i := strings.Index(resp, `"id":`)
-	if i < 0 {
-		t.Fatalf("no job id in %q", resp)
+	// The gateway encodes int64 as a JSON string, per the proto3 JSON mapping.
+	var r struct {
+		ID int64 `json:"id,string"`
 	}
-	var id int64
-	if _, err := fmt.Sscanf(resp[i:], `"id":%d`, &id); err != nil {
-		t.Fatalf("parse job id: %v", err)
+	if err := json.Unmarshal([]byte(resp), &r); err != nil || r.ID == 0 {
+		t.Fatalf("no job id in %q: %v", resp, err)
 	}
-	return id
+	return r.ID
 }
