@@ -1,6 +1,6 @@
 # Conveyor — Design Document
 
-> Status: Active (Phases 0–3 implemented). Last updated: 2026-10-16.
+> Status: Implemented (v1.0). Last updated: 2026-10-23. Measured results are in §8 and `results/`.
 
 ## 1. Context
 
@@ -67,15 +67,15 @@ demonstrate.
 | N1 | No job lost: every enqueued job eventually reaches a terminal state or remains retryable. |
 | N2 | No double effect: a job's side effect is applied at most once. |
 | N3 | Crash recovery time: a job from a crashed worker is picked up again within `2 × lease duration` (default lease 30 s → recovery < 60 s + backoff). |
-| N4 | Throughput (target, stated hardware M-series, 16 GB, single Postgres): ≥ 5k jobs/s sustained enqueue+execute round trip for tiny no-op jobs. (Re-baselined after Phase 5 benchmarks.) |
-| N5 | Enqueue-to-start latency for available jobs on an idle system: p50 < 50 ms (wake-up path), p99 < 500 ms (poll fallback bound). |
+| N4 | Throughput on one Postgres (Apple M5, 16 GB): target ≥ 5k jobs/s end to end for no-op jobs. **Not met:** measured 2697 ± 107 jobs/s (§8). The limit is WAL flushing, three durable commits per job; see §8 for what would move it. |
+| N5 | Enqueue-to-start latency when workers keep up: p50 < 50 ms, p99 < 500 ms. **Met:** p50 5.0 ms, p99 12.4 ms at 2.7k jobs/s (§8). |
 | N6 | Graceful shutdown: an in-flight job runs to completion or its lease is released within the worker's shutdown budget (default 25 s). |
 | N7 | Durability: acknowledged enqueues survive Postgres restart (synchronous commit). |
 
 ### Error budget note
 
 N2/N1 are hard invariants (zero tolerance), verified by the checker in every
-fault-injection run and by TLC in CI. N3–N5 are SLOs measured in Phase 5.
+fault-injection run and by TLC in CI. N3–N5 are SLOs; §8 reports the measurements.
 
 ## 4. System overview
 
@@ -174,20 +174,29 @@ dequeue scans off completed rows.
 
 ### 5.3 Dequeue, leases, fencing
 
-Dequeue (single transaction):
+Dequeue is one statement (`queue.Dequeue`): a CTE picks due `available`
+rows in priority order with `FOR UPDATE SKIP LOCKED`, skipping jobs whose
+dependencies are not all completed and honouring the queue's concurrency and
+rate limits, and the outer `UPDATE` claims them:
 
 ```sql
-SELECT id FROM jobs
- WHERE state IN ('available','retryable')
-   AND queue = $1 AND run_at <= now()
- ORDER BY priority DESC, run_at, id
- LIMIT $batch
- FOR UPDATE SKIP LOCKED;
--- then for each row:
-UPDATE jobs SET state='running', attempt=attempt+1,
-  lease_owner=$w, lease_expiry=now()+$lease, lease_version=lease_version+1
- WHERE id=$id AND lease_version IS NOT NULL;  -- always succeeds under the row lock
+WITH picked AS (
+  SELECT id FROM jobs
+  WHERE state = 'available' AND queue = $1 AND run_at <= now()
+    AND <dependencies completed> AND <concurrency and rate limit allow>
+  ORDER BY priority DESC, run_at, id
+  LIMIT $batch
+  FOR UPDATE SKIP LOCKED)
+UPDATE jobs SET state = 'running', attempt = attempt + 1,
+  lease_owner = $worker, lease_expiry = now() + $lease,
+  lease_version = lease_version + 1, started_at = now()
+FROM picked WHERE jobs.id = picked.id
+RETURNING ...;
 ```
+
+The source and target states in this and every other state-changing
+statement come from `statemachine.Edge`, so no SQL can perform a transition
+the table in §5.1 does not list.
 
 `SELECT ... FOR UPDATE SKIP LOCKED` guarantees at most one worker claims a
 row per queue shard; the maintenance leader's reaper uses the same locking
@@ -237,8 +246,8 @@ What Conveyor guarantees instead:
 
 ### 5.5 Retries, backoff, dead letter
 
-Backoff: `min(cap, base * 2^attempt)` with full jitter, `base=1s`,
-`cap=10m`. After `max_attempts`, the job moves to `discarded` and is visible
+Backoff: uniform in `[0, min(cap, base * 2^(attempt-1)))` (full jitter),
+`base=1s`, `cap=10m`; a property test checks the bound for any attempt count. After `max_attempts`, the job moves to `discarded` and is visible
 in the dashboard with its error history. Operators can retry or discard from
 the dashboard/CLI.
 
@@ -253,11 +262,17 @@ the idempotency-key guarantee.
 
 ### 5.7 Rate limits and concurrency
 
-Per-queue concurrency: the worker's dequeue is bounded by
-`queues.concurrency - running_jobs(queue)`, enforced in the dequeue
-transaction. Per-queue rate limit: a token-bucket row per queue in Postgres
-(or in-process when one worker owns the queue), consumed transactionally at
-dequeue time.
+Per-queue concurrency: dequeue claims nothing while
+`running_jobs(queue) >= queues.concurrency`. The count is not taken under a
+lock, so concurrent dequeuers can over-admit by up to one batch each; the
+code marks this ceiling.
+
+Per-queue rate limit: `queue_rate.last_dispatch` records the last claim, and
+a dequeue of `n` jobs is allowed only once `n / rate_limit_per_sec` seconds
+have passed since then. The row update is part of the dequeue statement.
+
+API rate limit: a token bucket per client IP in each API process
+(`CONVEYOR_RATE_LIMIT`, default 50 requests/s, burst 100).
 
 ### 5.8 Workflows
 
@@ -268,10 +283,11 @@ monotonic, so no locking is needed beyond the row lock on the dependency.
 
 ### 5.9 Wake-ups
 
-Enqueue and state transitions to `available` emit `NOTIFY jobs_available`.
-Workers `LISTEN` and re-run dequeue immediately. Polling (1 s idle backoff,
-capped) is the fallback for missed notifications and for NOTIFY-suppressed
-maintenance sweeps.
+Enqueue and every transition to `available` emit `NOTIFY jobs_available`,
+debounced to at most one per 10 ms with a trailing edge: a burst costs one
+notification at its start and one at the end of the window, and no job waits
+for a poll. Workers `LISTEN` on a dedicated connection, reconnect after
+losing it, and fall back to polling (200 ms doubling to 1 s) meanwhile.
 
 ### 5.10 Trade-offs
 
@@ -286,16 +302,25 @@ maintenance sweeps.
 
 ## 6. Interfaces
 
-- **gRPC API** (`Enqueue`, `Dequeue`-internal, `GetJob`, `ListJobs`,
-  `CancelJob`, `RetryJob`, heartbeats, completion) with a grpc-gateway
-  HTTP/JSON layer.
-- **Go client SDK**: typed wrapper, automatic heartbeat management, context
-  cancellation, retry on transient API errors.
-- **Worker library**: register handlers by kind, graceful shutdown (drain
-  with budget, then abort), context cancellation per job.
-- **CLI**: `conveyor enqueue|jobs|cancel|retry|queues|workers|schedule`.
-- **Dashboard**: small web UI (queue depths, throughput, latency
-  percentiles, retries, DLQ, retry/discard actions) served by the API server.
+- **gRPC API** (`api/proto/conveyor/v1`): `Enqueue`, `GetJob`, `ListJobs`,
+  `CancelJob`, `RetryJob`, `DiscardJob`, `ListQueues`, `CreateCron`,
+  `GetStats`, plus the standard gRPC health service; the same proto
+  generates the HTTP/JSON gateway under `/v1/`.
+- **Go SDK** (`internal/client`): typed options, bearer token, optional
+  TLS, trace-context propagation.
+- **Worker library** (`internal/worker`): handlers by kind; dequeue only into
+  free slots; heartbeats every lease/3; context cancelled on lost lease;
+  batched, fenced completions; graceful shutdown that stops claiming at once
+  and lets in-flight jobs finish within a budget; `CompleteTx` for handlers
+  that commit their effect and the completion in one transaction.
+  Workers talk to Postgres directly, not through the API, so the API is not
+  on the hot path.
+- **CLI** (`cmd/conveyor`): `enqueue`, `jobs`, `get`, `cancel`, `retry`,
+  `discard`, `queues`, `cron`, `stats`.
+- **Dashboard** (`/`): throughput, enqueue-to-start p50/p95/p99, retries,
+  dead-letter queue with retry, queue depth by state, recent jobs with
+  cancel; in demo mode also the worker fleet, the chaos button and the live
+  exactly-once check.
 
 ## 7. Correctness
 
@@ -310,46 +335,84 @@ maintenance sweeps.
 
 ### 7.2 Formal model
 
-`spec/tla/Conveyor.tla` models enqueue, dequeue, heartbeat, lease expiry,
-completion, retry, worker crash, and reaper. It is model-checked with TLC
-against invariants 1–5 on a small configuration (2 jobs, 2 workers, bounded
-lease versions). The model intentionally abstracts: SQL implementation
-details, priorities, cron, workflows, rate limits, and the network between
-API and workers (treated as atomic RPC). See §10 limitations.
+`spec/tla/Conveyor.tla` models enqueue with idempotency keys, dequeue,
+heartbeat, lease loss, lease expiry, the reaper, completion with its effect,
+failure and retry, and worker crash and restart. TLC checks it on every PR
+(`MCConveyor.cfg`: three enqueue attempts, two sharing a key; two workers;
+two attempts; one crash) for invariants 2–5 as state invariants or an action
+property, and for invariant 1 as a liveness property under weak fairness.
+`spec/tla/README.md` lists what the model leaves out.
 
 ### 7.3 Fault injection
 
-A harness runs real API servers and workers as processes and injects:
-`kill -9` on workers, `SIGSTOP` (lease-limbo), network faults via faultproxy
-(latency, drops, partitions) between workers and Postgres, Postgres restarts,
-and clock skew. Each job's side effect appends to `ledger` with the fencing
-token. A checker reads the committed history and asserts: no job lost, no
-duplicate effect, every completion carried the then-current fencing token.
+`internal/fault` runs four real worker processes against Postgres through
+Toxiproxy and, in every run, injects: 30 ms ± 10 ms latency and 5%
+connection resets for the whole run, a Postgres restart, `kill -9` of one
+worker, `SIGSTOP` of another for 2.5 leases (it resumes as a zombie), a 4 s
+network partition, and a fourth worker whose clock runs 4x slow (it
+heartbeats every 8 s against a 2 s lease). Each job's effect is a `ledger`
+row committed in the same transaction as its completion. Afterwards
+`internal/checker` reads the history and fails the run unless every job is
+terminal, every completed job has exactly one ledger row carrying its final
+fencing token, and no other job has one. The test also requires that leases
+actually expired, so a run in which the faults did nothing fails. Results:
+`results/fault-*.json` and the README.
 
-## 8. Performance plan
+## 8. Performance results
 
-- Load generator (`cmd/loadgen`) measuring enqueue→start latency (p50/p95/
-  p99) and throughput, sweeping worker count, batch size, payload size.
-- Comparison against River (Postgres-backed Go queue) on the same hardware,
-  explaining differences.
-- One bottleneck identified and fixed (candidate: `FOR UPDATE SKIP LOCKED`
-  contention; mitigation candidates: batched dequeue, advisory-lock keyed
-  shards, `NOTIFY`-driven thinning), reported with before/after numbers.
+Method, raw data and commands: `results/bench-2026-10-23.json`, produced by
+`scripts/bench.sh` (5 reps of 2000 no-op jobs per configuration, Postgres
+17.11 in Docker on the same Apple M5 / 16 GB laptop, 95% Student-t
+intervals). Summary:
+
+- **Bottleneck:** WAL flushes. Each job needs three durable commits (enqueue,
+  claim, completion); sampling `pg_stat_activity` during runs shows
+  `LWLock:WALWrite` and `IO:WalSync` as the most common waits after CPU.
+- **Change that moved it:** batching completions per worker into one fenced
+  `UPDATE ... FROM unnest(...)` (ADR 0004): 2024 ± 138 → 2697 ± 107 jobs/s.
+  It relieved contention for the WAL write lock (27.4% → 16.4% of wait
+  samples), but WAL flushing is still about 40% of samples: the bottleneck
+  moved down, not away.
+- **Wake-ups:** one NOTIFY per enqueue costs throughput (1545 ± 86 jobs/s);
+  the debounced, trailing-edge NOTIFY keeps p99 at 12.4 ms.
+- **Scaling:** 2–8 worker loops are within noise of each other; 16 loops
+  drop to 1230 ± 124 jobs/s (more claim statements competing for CPU and
+  WAL), and one loop with 8 slots cannot keep up (backlog: p50 279 ms).
+  Payload size costs WAL bandwidth: 64 KiB args reach 1061 ± 22 jobs/s.
+- **River v0.49.0, same host and workload:** 321 jobs/s with its default
+  100 ms fetch cooldown, 1921 ± 918 jobs/s with 1 ms. River does more per
+  job (a richer row: metadata, attempt history) and its default deliberately
+  trades latency for fewer fetch queries.
+- **What would move it next:** batching enqueues (`EnqueueMany`), claiming
+  and completing in fewer round trips, `synchronous_commit = off` for queues
+  that can tolerate losing the last few hundred milliseconds of enqueues
+  after a crash, and sharding queues across Postgres instances.
 
 ## 9. Observability, security, operations
 
 - Prometheus metrics: queue depth by state, transition counts, per-transition
   latency histograms, retries, dead-letter count, lease expirations, leader
   changes, request rate/errors/duration.
-- OpenTelemetry trace context carried in `jobs.trace_context` so a trace
-  spans enqueue → dequeue → execution.
-- Structured JSON logs with request IDs; health (`/healthz`) and readiness
-  (`/readyz`) endpoints.
-- Grafana dashboards committed under `dashboards/`.
-- Auth: API tokens (Bearer), payload size limits (default 64 KiB), TLS in
-  deployment, least-privilege DB roles (app role with row-level grants on the
-  tables it needs; maintenance role separate).
-- Dependency and container scanning in CI; `govulncheck` on every PR.
+  API processes export these plus queue depth read from Postgres at scrape
+  time; workers export theirs on `METRICS_ADDR`.
+- OpenTelemetry: the HTTP handler, gRPC server and client, enqueue and job
+  execution create spans; the enqueue span's W3C context is stored in
+  `jobs.trace_context`, and the worker continues it, so one trace covers the
+  request and the job's execution in another process (OTLP/HTTP export).
+- Structured JSON logs; one access line per RPC with a request ID (taken
+  from `X-Request-Id` or generated, and echoed back). `/healthz`, `/readyz`
+  and the gRPC health service.
+- Grafana dashboard in `dashboards/conveyor.json`, provisioned with
+  Prometheus and Jaeger by `compose-demo.yml --profile observability`.
+- Security: bearer token compared in constant time; optional public read
+  for the demo; per-IP rate limit; 64 KiB argument limit plus a body limit
+  on the gateway; input validation on every field; TLS via Caddy (HTTP and
+  gRPC); Postgres roles split into a schema owner that runs migrations and
+  `conveyor_app` with DML rights only (`deploy/initdb/01-roles.sh`);
+  distroless non-root image; CSP on the dashboard.
+- CI: gofmt, vet, staticcheck, golangci-lint, govulncheck, race-detector
+  tests with an 85% coverage gate on core packages, TLC, Trivy image and
+  repository scans, and an end-to-end smoke test of the demo stack.
 
 ## 10. Alternatives considered
 
@@ -358,7 +421,7 @@ duplicate effect, every completion carried the then-current fencing token.
 | **Redis-backed queue** | Fast, but durability semantics weaker; needs blocking commands for dequeue at scale; we'd reimplement leasing/fencing and still do idempotency elsewhere. Keeping one store avoids a cross-system atomicity problem. |
 | **Kafka as the queue** | High throughput, but consumer groups reprocess on rebalance; exactly-once effects still need an external store; leases/fencing and per-job retry/DLQ semantics are awkward. Better fit for event streaming than per-job delivery. |
 | **Database-agnostic design** (pluggable storage) | We would dilute correctness guarantees to the lowest common denominator and double the test matrix. Postgres-specific features (`SKIP LOCKED`, advisory locks, `LISTEN/NOTIFY`) are exactly what make the invariants tractable. Postgres is already deployed nearly everywhere. |
-| **River (adopt as-is)** | River is a strong reference; we take its design ideas (leases, leader election, maintenance loop) as a baseline for comparison in Phase 5. It is MIT-licensed, so borrowing ideas with attribution is fine; the project goal is to demonstrate the SDE correctness work, which a wrapper would hide. |
+| **River (adopt as-is)** | River is a strong reference; we take its design ideas (leases, leader election, maintenance loop) as the baseline for the comparison in §8. It is MIT-licensed, so borrowing ideas with attribution is fine; the project goal is to demonstrate the SDE correctness work, which a wrapper would hide. |
 
 ## 11. Risks and mitigations
 
@@ -372,27 +435,36 @@ duplicate effect, every completion carried the then-current fencing token.
 
 ## 12. Hosting plan (free tier only)
 
-- **Primary**: Oracle Cloud Always Free VM (ARM) running Docker Compose:
-  Postgres, API server, dashboard, maintenance worker, Grafana, worker fleet.
-  Public demo with AUTH token for visitors; chaos button implemented as a
-  guarded endpoint that SIGKILLs one synthetic worker process.
-- **Fallback/static assets**: Netlify or Vercel for the marketing/docs page
-  only (not the live system).
-- **DB (if VM proves unreliable)**: Neon free tier Postgres + API on Render
-  free web service. Evaluate in Phase 6; the VM is the plan of record.
+- **Plan of record:** one Oracle Cloud Always Free Ampere A1 VM (4 OCPU,
+  24 GB) running `compose-demo.yml`: Postgres, the API in demo mode with
+  three supervised worker processes, and Caddy for automatic HTTPS. The
+  observability profile adds Prometheus, Grafana and Jaeger on loopback.
+  Steps are in `docs/runbook.md`.
+- **Fallback:** Neon free Postgres with the API on a free container host;
+  the demo's child-process workers need no extra services.
 
 ## 13. Threat model (summary)
 
-- **Spoofed/replayed API calls**: require Bearer token on every write; tokens
-  from env, never logged.
+- **Unauthenticated writes**: every write needs the bearer token, compared
+  in constant time; tokens come from the environment and are never logged.
+  The token is shared, not per client, and TLS is what stops replay on the
+  wire.
 - **Oversized payloads**: request size limit 64 KiB at the gateway, enforced
   again in the API layer.
 - **Malicious job args**: arguments are JSON, executed by user-registered
   handlers only; Conveyor never evals args server-side.
-- **DoS via queue flooding**: per-token rate limit and payload limits; still
-  out of scope to defend fully on free hosting.
-- **DB credential theft**: least-privilege roles; TLS to Postgres in
-  deployment; secrets in environment, `.env` gitignored.
+- **DoS via queue flooding**: per-IP token bucket, payload and body limits,
+  and HTTP timeouts. The limiter keys on the first `X-Forwarded-For` hop,
+  which Caddy sets; a direct gRPC client could forge it, so the gRPC port is
+  bound to loopback in the demo. A determined attacker can still exhaust a
+  free VM.
+- **Chaos endpoint**: unauthenticated by design in the demo, limited to one
+  kill every 5 s, and it can only signal the demo's own child processes.
+- **Dashboard XSS**: job kinds and errors are caller-controlled, so the page
+  renders them as text, never HTML, under a restrictive CSP.
+- **DB credential theft**: the runtime role cannot alter the schema;
+  Postgres is not published outside the Docker network; secrets live in
+  `.env`, which is gitignored.
 - **Supply chain**: pinned dependencies, `govulncheck`, container scanning,
   no bot commits.
 
