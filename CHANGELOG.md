@@ -1,6 +1,9 @@
 # Changelog
 
-## v1.1.0 (2026-10-23)
+## v1.8.0 (2026-10-23)
+
+Tags v1.1.0 to v1.7.0 mark interim states of `main` between v1.0.0 and this release; they had no
+release notes of their own, and everything they contain is described below.
 
 ### Added
 - **Fault injection through Toxiproxy**: every run now adds a 4 s network partition, connection
@@ -44,14 +47,14 @@
 - The Go toolchain and `golang.org/x/net` were bumped to fix vulnerabilities reported by
   govulncheck.
 
-### Corrections to v1.0.0
+### Corrections to earlier figures
 - The v1.0.0 benchmark figures (789 → 1243 jobs/s, River 298 and 643 jobs/s) came from single
   runs whose "before" configurations could not be rebuilt from the released code. They are
   replaced by `results/bench-2026-10-23.json`.
 - The v1.0.0 fault result covered one run of 60 jobs without partitions or clock skew, and its
   per-scenario breakdown and hardware description were added to the file by hand afterwards.
   They are replaced by `results/fault-2026-10-23.json`, which the harness writes itself.
-- The coverage gate added after v1.0.0 read a profile that did not exist yet when it ran, so it
+- The coverage gate added in v1.3.0 read a profile that did not exist yet when it ran, so it
   always skipped; CI now enforces coverage directly.
 
 ## v1.0.0 (2026-10-08)
