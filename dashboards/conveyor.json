@@ -1,63 +1,369 @@
 {
+  "uid": "conveyor",
   "title": "Conveyor",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
   "panels": [
     {
       "id": 1,
-      "title": "Jobs by state",
+      "title": "Throughput (completions/s)",
       "type": "stat",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
-      "targets": [{"expr": "conveyor_jobs", "legendFormat": "{{state}}"}]
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(conveyor_transitions_total{event=\"complete\"}[1m]))",
+          "legendFormat": "completed"
+        }
+      ]
     },
     {
       "id": 2,
-      "title": "Running with expired lease",
+      "title": "Dead-letter queue",
       "type": "stat",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
-      "targets": [{"expr": "conveyor_jobs_running_expired_lease"}]
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(conveyor_queue_depth{state=\"discarded\"})",
+          "legendFormat": "discarded"
+        }
+      ]
     },
     {
       "id": 3,
-      "title": "Leader",
+      "title": "Running with expired lease (should be 0)",
       "type": "stat",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
-      "targets": [{"expr": "conveyor_is_leader"}]
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(conveyor_running_expired_lease)",
+          "legendFormat": "expired"
+        }
+      ]
     },
     {
       "id": 4,
-      "title": "Leader changes",
-      "type": "stat",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
-      "targets": [{"expr": "conveyor_leader_changes_total"}]
+      "title": "Enqueue-to-start latency",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(conveyor_enqueue_to_start_seconds_bucket[1m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(conveyor_enqueue_to_start_seconds_bucket[1m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(conveyor_enqueue_to_start_seconds_bucket[1m])))",
+          "legendFormat": "p99"
+        }
+      ]
     },
     {
       "id": 5,
-      "title": "Job duration by kind",
+      "title": "Queue depth by state",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
-      "targets": [{"expr": "conveyor_job_duration_seconds_bucket", "legendFormat": "{{kind}} {{outcome}}"}]
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (state) (conveyor_queue_depth)",
+          "legendFormat": "{{state}}"
+        }
+      ]
     },
     {
       "id": 6,
-      "title": "RPC requests by method and status",
+      "title": "Transitions by event",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
-      "targets": [{"expr": "conveyor_rpc_requests_total", "legendFormat": "{{method}} {{code}}"}]
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (event) (rate(conveyor_transitions_total[1m]))",
+          "legendFormat": "{{event}}"
+        }
+      ]
     },
     {
       "id": 7,
-      "title": "Transitions by event",
+      "title": "Transition statement latency p99",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
-      "targets": [{"expr": "conveyor_transitions_total", "legendFormat": "{{event}}"}]
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le, event) (rate(conveyor_transition_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{event}}"
+        }
+      ]
     },
     {
       "id": 8,
-      "title": "RPC latency",
+      "title": "Retries and lease expirations",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
-      "targets": [{"expr": "conveyor_rpc_duration_seconds_bucket", "legendFormat": "{{method}}"}]
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(conveyor_transitions_total{event=~\"fail_retry|lease_expired_retry\"}[1m]))",
+          "legendFormat": "retries/s"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(conveyor_lease_expirations[5m])",
+          "legendFormat": "lease expirations/s"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Maintenance leader",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(conveyor_is_leader)",
+          "legendFormat": "leaders (must be 1)"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(increase(conveyor_leader_changes_total[1h]))",
+          "legendFormat": "leader changes / 1h"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "API requests by code",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (code) (rate(conveyor_rpc_requests_total[1m]))",
+          "legendFormat": "{{code}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "API latency p99 by method",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (le, method) (rate(conveyor_rpc_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{method}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Handler duration p95 by kind",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, kind) (rate(conveyor_job_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{kind}}"
+        }
+      ]
     }
   ]
 }

@@ -1,0 +1,6 @@
+apiVersion: 1
+providers:
+  - name: conveyor
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
