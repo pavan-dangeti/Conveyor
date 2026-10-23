@@ -16,9 +16,12 @@ coverage.out
 .idea/
 .vscode/
 
-# TLA+ trace output
-spec/tla/*_TTrace_*.tla
+# TLC working files and trace output
+spec/tla/.tlc/
 spec/tla/states/
-spec/tla/*_TTrace_*.bin
+spec/tla/*_TTrace_*
 **/testdata/rapid/
 /conveyor-api
+
+# TLC download
+tla2tools.jar

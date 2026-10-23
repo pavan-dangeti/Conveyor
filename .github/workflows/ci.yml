@@ -5,41 +5,45 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+env:
+  CORE_PACKAGES: ./internal/statemachine,./internal/queue,./worker,./internal/maintenance,./internal/api,./client,./internal/checker,./internal/telemetry,./internal/demo,./internal/bench
+
 jobs:
-  build-test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: vet
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: go vet
         run: go vet ./...
       - name: staticcheck
-        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.1 ./...
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: v2.14.0
-      - name: test with race detector
-        run: go test -race -coverprofile=coverage.out ./...
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run
       - name: govulncheck
-        uses: golang/govulncheck-action@v1
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
-  compose:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: validate compose files
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: unit, integration, property and fault-injection tests (race detector)
+        run: go test -race -timeout 25m -coverpkg="$CORE_PACKAGES" -coverprofile=coverage.out ./...
+      - name: core coverage at least 85%
         run: |
-          docker compose -f docker-compose.yml config
-          docker compose -f compose-demo.yml config
-      - name: start postgres
-        run: docker compose -f docker-compose.yml up --wait -d
-      - name: smoke test postgres
-        run: |
-          docker compose -f docker-compose.yml exec -T postgres \
-            psql -U conveyor -d conveyor -c "SELECT 1"
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {sub("%", "", $3); print $3}')
+          echo "core statement coverage: ${total}%"
+          awk -v t="$total" 'BEGIN { exit (t >= 85) ? 0 : 1 }'
 
   tlc:
     runs-on: ubuntu-latest
@@ -49,8 +53,39 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - name: download tla2tools (pinned v1.8.0)
-        run: curl -sSfL -o tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
-      - name: TLC model check
-        working-directory: spec/tla
-        run: java -cp ../../tla2tools.jar tlc2.TLC Conveyor.tla -config Conveyor.cfg -deadlock
+      - name: TLC model check and mutation check
+        run: scripts/tlc.sh
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build image
+        run: docker build -t conveyor:ci .
+      - name: scan image and dependencies (Trivy)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.67.2 \
+            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed conveyor:ci
+          docker run --rm -v "$PWD:/src" aquasec/trivy:0.67.2 \
+            fs --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed --scanners vuln,secret,misconfig /src
+      - name: end-to-end smoke test of the demo stack
+        run: |
+          cp .env.example .env
+          docker compose -f compose-demo.yml up -d --build
+          for i in $(seq 1 60); do curl -skf https://localhost/readyz && break; sleep 2; done
+          code=$(curl -s -o /dev/null -w '%{http_code}' -XPOST localhost:8080/v1/jobs -d '{"queue":"default","kind":"work"}')
+          [ "$code" = 401 ] || { echo "unauthenticated write returned $code"; exit 1; }
+          id=$(curl -sf -XPOST localhost:8080/v1/jobs -H 'Authorization: Bearer change-me-token' \
+            -d '{"queue":"default","kind":"work","args":"{\"ms\":50}"}' | jq -r .id)
+          curl -sf -XPOST localhost:8080/demo/chaos
+          for i in $(seq 1 60); do
+            state=$(curl -sf "localhost:8080/v1/jobs/$id" | jq -r .state)
+            [ "$state" = completed ] && break
+            sleep 1
+          done
+          [ "$state" = completed ] || { echo "job $id ended $state"; exit 1; }
+          curl -sf localhost:8080/demo/check | jq -e '.violations == null'
+          curl -sf localhost:8080/metrics | grep -q conveyor_queue_depth
+      - name: logs on failure
+        if: failure()
+        run: docker compose -f compose-demo.yml logs --tail 200
