@@ -1,0 +1,12 @@
+# TLS termination for the demo host. With DOMAIN set to a public name Caddy
+# obtains a Let's Encrypt certificate; with the default it uses a local CA.
+{$DOMAIN:localhost} {
+	encode zstd gzip
+	@grpc path /conveyor.v1.Conveyor/* /grpc.health.v1.Health/*
+	reverse_proxy @grpc h2c://api:9090
+	reverse_proxy api:8080
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}
