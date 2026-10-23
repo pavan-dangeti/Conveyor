@@ -29,6 +29,7 @@ services:
       DATABASE_URL: postgres://conveyor_app:${APP_DB_PASSWORD}@postgres:5432/conveyor?sslmode=disable
       CONVEYOR_API_TOKEN: ${CONVEYOR_API_TOKEN:?set CONVEYOR_API_TOKEN in .env}
       CONVEYOR_PUBLIC_READ: "1"
+      DOMAIN: ${DOMAIN:-localhost}
       CONVEYOR_DEMO: "1"
       DEMO_WORKERS: "3"
       DEMO_RATE: ${DEMO_RATE:-4}

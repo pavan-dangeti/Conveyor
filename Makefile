@@ -41,8 +41,11 @@ bench:
 fault:
 	FAULT_RUNS=5 FAULT_RESULTS=1 go test -run TestFaultInjection -count=1 -timeout 40m -v ./internal/fault
 
+# Creates .env with fresh random secrets the first time.
 demo:
-	test -f .env || cp .env.example .env
+	test -f .env || sed -e "s/change-me-owner/$$(openssl rand -hex 24)/" \
+	  -e "s/change-me-app/$$(openssl rand -hex 24)/" \
+	  -e "s/change-me-token/$$(openssl rand -hex 24)/" .env.example > .env
 	docker compose -f compose-demo.yml up -d --build
 
 demo-down:

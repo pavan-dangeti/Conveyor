@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"net"
+	"net/netip"
 	"path"
 	"strings"
 	"sync"
@@ -83,35 +84,43 @@ func Interceptor(cfg InterceptorConfig, logger *slog.Logger) grpc.UnaryServerInt
 	}
 }
 
-// clientIP prefers the first X-Forwarded-For hop, which the HTTP gateway
-// (behind the TLS proxy) forwards, so limits apply to the browser rather
-// than to the gateway's loopback connection. Direct gRPC callers can set
-// the header themselves; the threat model notes this.
+// clientIP identifies the caller for rate limiting. X-Forwarded-For is
+// honoured only when the connection comes from a loopback or private
+// address, i.e. from the in-process HTTP gateway or the TLS proxy on the
+// container network; a caller connecting directly is keyed by its own
+// address, so it cannot pick its bucket by forging the header.
 func clientIP(ctx context.Context, md metadata.MD) string {
-	if v := first(md.Get("x-forwarded-for")); v != "" {
+	addr := "unknown"
+	if p, ok := peer.FromContext(ctx); ok {
+		addr = p.Addr.String()
+		if host, _, err := net.SplitHostPort(addr); err == nil {
+			addr = host
+		}
+	}
+	ip, err := netip.ParseAddr(addr)
+	trusted := err == nil && (ip.IsLoopback() || ip.IsPrivate())
+	if v := first(md.Get("x-forwarded-for")); v != "" && trusted {
 		hop := strings.TrimSpace(strings.Split(v, ",")[0])
 		if host, _, err := net.SplitHostPort(hop); err == nil {
 			return host
 		}
 		return hop
 	}
-	if p, ok := peer.FromContext(ctx); ok {
-		if host, _, err := net.SplitHostPort(p.Addr.String()); err == nil {
-			return host
-		}
-	}
-	return "unknown"
+	return addr
 }
 
-// limiter is a token bucket per client. Known limit: the map is dropped
-// wholesale every 10 minutes instead of evicting idle clients; switch to an
-// LRU if a deployment sees enough distinct clients for that to matter.
+// limiter is a token bucket per client. Known limit: instead of evicting
+// idle clients, the map is dropped every 10 minutes or when it reaches
+// maxClients entries, which briefly resets everyone's budget; switch to an
+// LRU if that matters.
 type limiter struct {
 	rate, burst float64
 	mu          sync.Mutex
 	buckets     map[string]*bucket
 	reset       time.Time
 }
+
+const maxClients = 100_000
 
 type bucket struct {
 	tokens float64
@@ -129,7 +138,7 @@ func (l *limiter) allow(key string) bool {
 	now := time.Now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if now.Sub(l.reset) > 10*time.Minute {
+	if now.Sub(l.reset) > 10*time.Minute || len(l.buckets) >= maxClients {
 		l.buckets, l.reset = map[string]*bucket{}, now
 	}
 	b, ok := l.buckets[key]

@@ -49,6 +49,7 @@ type Demo struct {
 	logger *slog.Logger
 
 	mu        sync.Mutex
+	refresh   sync.Mutex
 	workers   []*worker
 	lastChaos time.Time
 	check     *checker.Report
@@ -212,21 +213,36 @@ func (d *Demo) Register(mux *http.ServeMux) {
 		writeJSON(w, http.StatusOK, map[string]string{"killed": name})
 	})
 	mux.HandleFunc("GET /demo/check", func(w http.ResponseWriter, r *http.Request) {
-		d.mu.Lock()
-		rep, fresh := d.check, time.Since(d.checkedAt) < checkCacheTTL
-		d.mu.Unlock()
-		if !fresh {
-			var err error
-			if rep, err = checker.Run(r.Context(), d.db); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-				return
-			}
-			d.mu.Lock()
-			d.check, d.checkedAt = rep, time.Now()
-			d.mu.Unlock()
+		rep, err := d.checkReport(r.Context())
+		if err != nil {
+			d.logger.Error("demo check", "err", err)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "check unavailable"})
+			return
 		}
 		writeJSON(w, http.StatusOK, rep)
 	})
+}
+
+// checkReport returns the cached checker report, refreshing it at most once
+// per checkCacheTTL: concurrent requests wait for the one refresh in flight
+// instead of each scanning the job history.
+func (d *Demo) checkReport(ctx context.Context) (*checker.Report, error) {
+	d.refresh.Lock()
+	defer d.refresh.Unlock()
+	d.mu.Lock()
+	rep, fresh := d.check, time.Since(d.checkedAt) < checkCacheTTL
+	d.mu.Unlock()
+	if fresh {
+		return rep, nil
+	}
+	rep, err := checker.Run(ctx, d.db)
+	if err != nil {
+		return nil, err
+	}
+	d.mu.Lock()
+	d.check, d.checkedAt = rep, time.Now()
+	d.mu.Unlock()
+	return rep, nil
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
