@@ -1,0 +1,11 @@
+# make tlc (TLA+ tools v1.7.4), 2026-10-23, Apple M5
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Model checking completed. No error has been found.
+100279 states generated, 19530 distinct states found, 0 states left on queue.
+The depth of the complete state graph search is 20.
+
+# Mutation check: the same model with the fencing-token comparison removed from Holds
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Error: Action property OnlyHolderDecides is violated.
+7587 states generated, 2523 distinct states found, 1166 states left on queue.
+The depth of the complete state graph search is 9.
