@@ -8,8 +8,11 @@ The lease/fencing protocol has subtle interleavings (crash, expiry, zombie).
 Unit tests cannot enumerate them.
 
 ## Decision
-Commit `spec/tla/Conveyor.tla` and a small `.cfg`; run TLC in CI on every PR
-with a bounded configuration (3 jobs, 2 workers, bounded versions).
+Commit `spec/tla/Conveyor.tla`, a model module `MCConveyor.tla` and its
+`.cfg`; run TLC in CI on every PR on a bounded configuration (three enqueue
+attempts of which two share an idempotency key, two workers, two attempts,
+one crash), checking the safety invariants and, under weak fairness, the
+liveness property that every created job reaches a terminal state.
 
 ## Consequences
 - Protocol regressions fail CI before merge.
