@@ -2,8 +2,8 @@
 
 ## v1.8.0 (2026-10-23)
 
-Tags v1.1.0 to v1.7.0 mark interim states of `main` between v1.0.0 and this release; they had no
-release notes of their own, and everything they contain is described below.
+This entry summarises every change since v1.0.0, including the interim releases v1.1.0 to v1.7.0
+(2026-10-17), whose individual notes are on the GitHub releases page.
 
 ### Added
 - **Fault injection through Toxiproxy**: every run now adds a 4 s network partition, connection
