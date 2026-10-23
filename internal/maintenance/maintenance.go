@@ -1,5 +1,6 @@
-// Package maintenance runs one leader that promotes due jobs, reaps expired
-// leases, and archives old terminal rows. Leader election is a Postgres
+// Package maintenance runs one leader that promotes due jobs, expands cron
+// schedules, reaps expired leases, cancels orphaned workflow jobs, and
+// archives old terminal rows. Leader election is a Postgres
 // session-level advisory lock: if the leader dies, its lock releases and a
 // standby can take over.
 package maintenance
@@ -81,6 +82,9 @@ func RunElectedLoop(ctx context.Context, db *sql.DB, logger *slog.Logger, tick t
 					logger.Error("reap", "err", err)
 				} else if n > 0 {
 					logger.Warn("reaped expired leases", "n", n)
+				}
+				if _, err := queue.CancelOrphans(ctx, db); err != nil {
+					logger.Error("cancel orphans", "err", err)
 				}
 				if n, err := queue.ArchiveOld(ctx, db, 24*time.Hour); err != nil {
 					logger.Error("archive", "err", err)

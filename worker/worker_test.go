@@ -9,45 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavan-dangeti/Conveyor/internal/migrate"
+	"github.com/pavan-dangeti/Conveyor/internal/pgtest"
 	"github.com/pavan-dangeti/Conveyor/internal/queue"
-	"github.com/pavan-dangeti/Conveyor/internal/store"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func setup(t *testing.T) (*sql.DB, string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	t.Cleanup(cancel)
-	c, err := postgres.Run(ctx, "postgres:17-alpine",
-		postgres.WithDatabase("conveyor"),
-		postgres.WithUsername("conveyor"),
-		postgres.WithPassword("conveyor"),
-		testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = c.Terminate(context.Background()) })
-	dsn, err := c.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := store.Open(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := migrate.Up(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO queues(name) VALUES ('q1')`); err != nil {
-		t.Fatal(err)
-	}
-	return db, dsn
-}
+func setup(t *testing.T) (*sql.DB, string) { return pgtest.Start(t) }
 
 func TestWorkerProcessesJobs(t *testing.T) {
 	db, dsn := setup(t)
@@ -191,6 +157,7 @@ func TestLeaseExpiryRecoveryByAnotherWorker(t *testing.T) {
 	defer w1cancel()
 	go func() { _ = w1.Run(w1ctx) }()
 
+	waitForState(t, db, "running")
 	// Simulate a crashed worker whose lease is already gone. Its fencing token
 	// is stale forever, exactly as after a kill -9.
 	if _, err := db.Exec(`UPDATE jobs SET lease_expiry = now() - interval '1 second' WHERE state='running'`); err != nil {
@@ -200,6 +167,10 @@ func TestLeaseExpiryRecoveryByAnotherWorker(t *testing.T) {
 		t.Fatal(err)
 	} else if n != 1 {
 		t.Fatalf("want 1 reaped, got %d", n)
+	}
+	// The reaper schedules the retry 1 s out; skip the backoff.
+	if _, err := db.Exec(`UPDATE jobs SET run_at = now() WHERE state = 'retryable'`); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := queue.PromoteDue(ctx, db); err != nil {
 		t.Fatal(err)
@@ -235,4 +206,20 @@ func TestLeaseExpiryRecoveryByAnotherWorker(t *testing.T) {
 		}
 	}
 	close(held)
+}
+
+func waitForState(t *testing.T, db *sql.DB, want string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		var state string
+		if err := db.QueryRow(`SELECT state FROM jobs WHERE queue='q1'`).Scan(&state); err != nil {
+			t.Fatal(err)
+		}
+		if state == want {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("job never reached %s", want)
 }

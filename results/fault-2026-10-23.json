@@ -1,0 +1,125 @@
+{
+  "command": "FAULT_RUNS=5 FAULT_RESULTS=1 go test -run TestFaultInjection -count=1 -v ./internal/fault",
+  "date": "2026-10-23",
+  "host": "darwin/arm64 \"Apple M5\\n17179869184\\n\"",
+  "runs": [
+    {
+      "run": 1,
+      "seconds_to_drain": 69.072186166,
+      "check": {
+        "total": 200,
+        "by_state": {
+          "completed": 200
+        },
+        "ledger_rows": 200,
+        "violations": null
+      },
+      "lease_expirations": 43,
+      "jobs_claimed_more_than_once": 31,
+      "max_fencing_token": 6
+    },
+    {
+      "run": 2,
+      "seconds_to_drain": 62.273024625,
+      "check": {
+        "total": 200,
+        "by_state": {
+          "completed": 200
+        },
+        "ledger_rows": 200,
+        "violations": null
+      },
+      "lease_expirations": 37,
+      "jobs_claimed_more_than_once": 27,
+      "max_fencing_token": 5
+    },
+    {
+      "run": 3,
+      "seconds_to_drain": 65.273966333,
+      "check": {
+        "total": 200,
+        "by_state": {
+          "completed": 200
+        },
+        "ledger_rows": 200,
+        "violations": null
+      },
+      "lease_expirations": 38,
+      "jobs_claimed_more_than_once": 28,
+      "max_fencing_token": 5
+    },
+    {
+      "run": 4,
+      "seconds_to_drain": 64.796837958,
+      "check": {
+        "total": 200,
+        "by_state": {
+          "completed": 200
+        },
+        "ledger_rows": 200,
+        "violations": null
+      },
+      "lease_expirations": 39,
+      "jobs_claimed_more_than_once": 28,
+      "max_fencing_token": 5
+    },
+    {
+      "run": 5,
+      "seconds_to_drain": 62.006483959,
+      "check": {
+        "total": 200,
+        "by_state": {
+          "completed": 200
+        },
+        "ledger_rows": 200,
+        "violations": null
+      },
+      "lease_expirations": 36,
+      "jobs_claimed_more_than_once": 27,
+      "max_fencing_token": 5
+    }
+  ],
+  "setup": {
+    "checker": "every job terminal; each completed job has exactly one ledger row whose fencing token equals its final lease_version; non-completed jobs have none",
+    "effect": "harness-worker inserts one ledger row and completes the job in one transaction guarded by (owner, fencing token)",
+    "faults": [
+      {
+        "at_seconds": 0,
+        "detail": "worker link, whole run: 30 ms ± 10 ms latency each way; 5% of connections reset by peer after 500 ms",
+        "name": "latency+drops"
+      },
+      {
+        "at_seconds": 2,
+        "detail": "Postgres container stopped, down for 2 s, started again",
+        "name": "postgres-restart"
+      },
+      {
+        "at_seconds": 8,
+        "detail": "worker w0 receives SIGKILL mid-batch and never returns",
+        "name": "kill-9"
+      },
+      {
+        "at_seconds": 10,
+        "detail": "worker w1 paused with SIGSTOP for 5 s (2.5 leases), then SIGCONT: it resumes as a zombie holding stale fencing tokens",
+        "name": "sigstop"
+      },
+      {
+        "at_seconds": 17,
+        "detail": "worker link cut for 4 s (toxiproxy disabled: open connections closed, new ones refused), then healed",
+        "name": "partition"
+      }
+    ],
+    "job_mix": "80% sleep 150 ms, 20% sleep 3000 ms (longer than the lease)",
+    "jobs_per_run": 200,
+    "lease": "2s",
+    "max_attempts": 25,
+    "skewed_worker": "w3 heartbeats every 8s against a 2s lease for the whole run",
+    "topology": "workers -\u003e toxiproxy:8667 (faulty) -\u003e postgres; checker -\u003e toxiproxy:8666 (clean) -\u003e postgres",
+    "workers": 4
+  },
+  "versions": {
+    "go": "go1.27.1",
+    "postgres": "postgres:17-alpine",
+    "toxiproxy": "2.12.0"
+  }
+}

@@ -1,28 +1,250 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Conveyor</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conveyor</title>
 <style>
- body{font-family:ui-monospace,monospace;background:#0b0f14;color:#c9d4e0;margin:24px}
- h1{font-size:18px} h2{font-size:14px;color:#7fd1a8;margin-top:28px}
- table{border-collapse:collapse} td,th{border:1px solid #233041;padding:6px 12px;text-align:left}
- th{color:#7fd1a8} button{background:#23476b;color:#cfe6ff;border:0;padding:4px 10px;cursor:pointer;border-radius:4px}
- small{color:#5b6b7c} #status{color:#e2c07f}
-</style></head><body>
-<h1>Conveyor dashboard <span id="status"></span></h1>
-<p><small>refresh 2s. Auth: set CONVEYOR_API_TOKEN in browser localStorage.conveyor_token</small></p>
-<p><button onclick="seed(10)">enqueue 10 jobs</button> <button onclick="seed(100)">100 jobs</button></p>
-<h2>Queues</h2><table id="queues"><thead><tr><th>name</th><th>concurrency</th><th>rate/sec</th><th>depth</th></tr></thead><tbody></tbody></table>
-<h2>Recent jobs</h2><table id="jobs"><thead><tr><th>id</th><th>queue</th><th>kind</th><th>state</th><th>attempt</th><th>action</th></tr></thead><tbody></tbody></table>
-<h2>Dead letter</h2><table id="dlq"><thead><tr><th>id</th><th>queue</th><th>kind</th><th>err</th><th>action</th></tr></thead><tbody></tbody></table>
-<script>
-let tok = localStorage.getItem('conveyor_token') || '';
-function h(){let r={'Content-Type':'application/json'};if(tok)r['Authorization']='Bearer '+tok;return r;}
-async function seed(n){const q='default';await fetch('/v1/queues',{headers:h()}).catch(()=>{});for(let i=0;i<n;i++){await fetch('/v1/jobs',{method:'POST',headers:h(),body:JSON.stringify({queue:'default',kind:'demo',args:'{}',priority:0})});}}
-async function refresh(){
- const r=await fetch('/v1/queues',{headers:h()});document.getElementById('status').textContent = r.ok?'':'auth error?';
- if(!r.ok)return;const j=await r.json();let qs='';for(const q of (j.queues||[])){let d=[];for(const k in q.depthByState)d.push(k+':'+q.depthByState[k]);qs+=`<tr><td>${q.name}</td><td>${q.concurrency}</td><td>${q.rateLimitPerSec}</td><td>${d.join(' ')}</td></tr>`;}document.querySelector('#queues tbody').innerHTML=qs;
- const jr=await fetch('/v1/jobs?limit=25',{headers:h()});const jj=await jr.json();let jb='';let dl='';for(const job of (jj.jobs||[])){if(job.state==='discarded'){dl+=`<tr><td>${job.id}</td><td>${job.queue}</td><td>${job.kind}</td><td></td><td><button onclick="retry(${job.id})">retry</button></td></tr>`;continue;}jb+=`<tr><td>${job.id}</td><td>${job.queue}</td><td>${job.kind}</td><td>${job.state}</td><td>${job.attempt}</td><td>${['available','scheduled','retryable'].includes(job.state)?`<button onclick="cancel(${job.id})">cancel</button>`:''}</td></tr>`;}document.querySelector('#jobs tbody').innerHTML=jb;document.querySelector('#dlq tbody').innerHTML=dl;
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #14181f; --muted: #5d6675; --line: #e3e6eb;
+  --accent: #2257d6; --ok: #1a7f4b; --warn: #b26a00; --bad: #c2352b;
+  --s-available: #2257d6; --s-running: #0e8a8a; --s-scheduled: #7a5af5; --s-retryable: #b26a00;
+  --s-completed: #1a7f4b; --s-discarded: #c2352b; --s-cancelled: #8a919c;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-async function retry(id){await fetch(`/v1/jobs/${id}:retry`,{method:'POST',headers:h(),body:'{}'});refresh();}
-async function cancel(id){await fetch(`/v1/jobs/${id}:cancel`,{method:'POST',headers:h(),body:'{}'});refresh();}
-setInterval(refresh,2000);refresh();
-</script></body></html>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --ink: #e6e9ee; --muted: #9aa3b0; --line: #262d37;
+    --accent: #6c9bff; --ok: #4cc38a; --warn: #e3a33b; --bad: #ff6b5e;
+    --s-available: #6c9bff; --s-running: #3cc6c6; --s-scheduled: #a78bfa; --s-retryable: #e3a33b;
+    --s-completed: #4cc38a; --s-discarded: #ff6b5e; --s-cancelled: #6b7280;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-size: 14px; }
+header { display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 17px; margin: 0; letter-spacing: .2px; }
+.sub { color: var(--muted); font-size: 13px; }
+header .spacer { flex: 1; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); display: inline-block; margin-right: 6px; }
+.dot.down { background: var(--bad); }
+main { max-width: 1240px; margin: 0 auto; padding: 20px 24px 40px; display: grid; gap: 16px; }
+.grid { display: grid; gap: 16px; }
+.kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.two { grid-template-columns: 1.4fr 1fr; }
+@media (max-width: 860px) { .two { grid-template-columns: 1fr; } main { padding: 16px; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+.kpi .v { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.kpi .u { color: var(--muted); font-size: 13px; margin-left: 3px; }
+.kpi .h { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.ok { color: var(--ok); } .bad { color: var(--bad); }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+td.err { white-space: normal; color: var(--muted); max-width: 320px; }
+.scroll { overflow-x: auto; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; color: #fff; }
+button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; padding: 7px 14px; }
+button:disabled { opacity: .5; cursor: default; }
+.bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--line); }
+.bar span { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; color: var(--muted); font-size: 12px; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; }
+.workers { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 10px 0 12px; }
+.worker { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.worker b { display: block; font-size: 13px; }
+.worker small { color: var(--muted); }
+#log { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--muted); max-height: 120px; overflow: auto; margin: 0; }
+svg { display: block; width: 100%; height: 90px; }
+.hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Conveyor</h1>
+  <span class="sub">durable job queue · exactly-once effects</span>
+  <span class="spacer"></span>
+  <span class="sub" id="health"><span class="dot"></span>connecting</span>
+</header>
+<main>
+  <section class="grid kpis">
+    <div class="card kpi"><h2>Throughput</h2><span class="v" id="k-tput">–</span><span class="u">jobs/s</span><div class="h">completed, last 60 s</div></div>
+    <div class="card kpi"><h2>Start latency p50</h2><span class="v" id="k-p50">–</span><span class="u">ms</span><div class="h">due → claimed</div></div>
+    <div class="card kpi"><h2>p95 / p99</h2><span class="v" id="k-p95">–</span><span class="u" id="k-p99"></span><div class="h">ms</div></div>
+    <div class="card kpi"><h2>Retries</h2><span class="v" id="k-retries">–</span><div class="h">attempts &gt; 1, last 60 s</div></div>
+    <div class="card kpi"><h2>Dead letter</h2><span class="v" id="k-dlq">–</span><div class="h">discarded jobs</div></div>
+    <div class="card kpi"><h2>Lease expirations</h2><span class="v" id="k-leases">–</span><div class="h">reaped since start</div></div>
+  </section>
+
+  <section class="grid two">
+    <div class="card"><h2>Completed per second</h2><svg id="spark" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="throughput over time"></svg></div>
+    <div class="card"><h2>Queue depth</h2><div id="queues"></div></div>
+  </section>
+
+  <section class="card hidden" id="demo">
+    <h2>Worker fleet · chaos</h2>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="primary" id="chaos">kill -9 a random worker</button>
+      <span id="check" class="sub"></span>
+    </div>
+    <div class="workers" id="workers"></div>
+    <pre id="log"></pre>
+  </section>
+
+  <section class="grid two">
+    <div class="card"><h2>Recent jobs</h2><div class="scroll"><table>
+      <thead><tr><th>id</th><th>kind</th><th>state</th><th>attempt</th><th>owner</th><th></th></tr></thead>
+      <tbody id="jobs"></tbody></table></div></div>
+    <div class="card"><h2>Dead-letter queue</h2><div class="scroll"><table>
+      <thead><tr><th>id</th><th>kind</th><th>error</th><th></th></tr></thead>
+      <tbody id="dlq"></tbody></table></div></div>
+  </section>
+</main>
+<script>
+"use strict";
+const STATES = ["scheduled", "available", "running", "retryable", "completed", "discarded", "cancelled"];
+const series = [];
+let token = "";
+try { token = localStorage.getItem("conveyor_token") || ""; } catch (_) {}
+
+function headers() {
+  const h = { "Content-Type": "application/json" };
+  if (token) h.Authorization = "Bearer " + token;
+  return h;
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: headers() });
+  if (r.status === 401) {
+    const t = prompt("API token (CONVEYOR_API_TOKEN)");
+    if (t) { token = t; try { localStorage.setItem("conveyor_token", t); } catch (_) {} }
+    throw new Error("unauthorized");
+  }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || r.statusText);
+  return r.json();
+}
+function el(tag, props = {}, ...children) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "style") n.style.cssText = v; else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else n[k] = v;
+  }
+  for (const c of children) n.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return n;
+}
+const num = v => Number(v || 0);
+const fmt = (v, d = 0) => num(v).toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d });
+const pill = s => el("span", { className: "pill", style: `background:var(--s-${STATES.includes(s) ? s : "cancelled"})` }, s);
+const setText = (id, v) => { document.getElementById(id).textContent = v; };
+
+function drawSpark() {
+  const svg = document.getElementById("spark");
+  const max = Math.max(1, ...series);
+  const pts = series.map((v, i) => `${(i / Math.max(1, series.length - 1)) * 300},${88 - (v / max) * 80}`);
+  const ns = "http://www.w3.org/2000/svg";
+  const area = document.createElementNS(ns, "polygon");
+  area.setAttribute("points", `0,90 ${pts.join(" ")} 300,90`);
+  area.setAttribute("fill", "var(--accent)"); area.setAttribute("opacity", ".12");
+  const line = document.createElementNS(ns, "polyline");
+  line.setAttribute("points", pts.join(" "));
+  line.setAttribute("fill", "none"); line.setAttribute("stroke", "var(--accent)"); line.setAttribute("stroke-width", "2");
+  line.setAttribute("vector-effect", "non-scaling-stroke");
+  svg.replaceChildren(area, line);
+}
+
+async function refresh() {
+  const health = document.getElementById("health");
+  try {
+    const [stats, queues, jobs, dlq] = await Promise.all([
+      api("/v1/stats?windowSeconds=60"), api("/v1/queues"),
+      api("/v1/jobs?limit=14"), api("/v1/jobs?state=discarded&limit=10"),
+    ]);
+    health.replaceChildren(el("span", { className: "dot" }), "live");
+    setText("k-tput", fmt(stats.completedPerSec, 1));
+    setText("k-p50", fmt(stats.startLatencyP50Ms, 0));
+    setText("k-p95", fmt(stats.startLatencyP95Ms, 0));
+    setText("k-p99", " / " + fmt(stats.startLatencyP99Ms, 0));
+    setText("k-retries", fmt(stats.retries));
+    setText("k-dlq", fmt(stats.deadLetter));
+    setText("k-leases", fmt(stats.leaseExpirations));
+    series.push(num(stats.completedPerSec)); if (series.length > 90) series.shift();
+    drawSpark();
+
+    const qbox = document.getElementById("queues");
+    qbox.replaceChildren();
+    for (const q of queues.queues || []) {
+      const d = q.depthByState || {};
+      const total = STATES.reduce((a, s) => a + num(d[s]), 0) || 1;
+      const bar = el("div", { className: "bar" });
+      const legend = el("div", { className: "legend" });
+      for (const s of STATES) {
+        if (!num(d[s])) continue;
+        bar.append(el("span", { style: `width:${(num(d[s]) / total) * 100}%;background:var(--s-${s})`, title: s }));
+        legend.append(el("span", {}, el("i", { style: `background:var(--s-${s})` }), `${s} ${fmt(d[s])}`));
+      }
+      qbox.append(el("div", { style: "margin-bottom:12px" },
+        el("div", { style: "display:flex;justify-content:space-between;margin-bottom:6px" },
+          el("b", {}, q.name), el("span", { className: "sub" }, `concurrency ${q.concurrency}${num(q.rateLimitPerSec) ? ` · ${q.rateLimitPerSec}/s` : ""}`)),
+        bar, legend));
+    }
+
+    document.getElementById("jobs").replaceChildren(...(jobs.jobs || []).map(j => el("tr", {},
+      el("td", {}, j.id), el("td", {}, j.kind), el("td", {}, pill(j.state)),
+      el("td", {}, `${j.attempt || 0}/${j.maxAttempts}`), el("td", {}, j.leaseOwner || ""),
+      el("td", {}, ["available", "scheduled", "retryable", "running"].includes(j.state)
+        ? el("button", { onclick: () => act(j.id, "cancel") }, "cancel") : ""))));
+    document.getElementById("dlq").replaceChildren(...(dlq.jobs || []).map(j => el("tr", {},
+      el("td", {}, j.id), el("td", {}, j.kind), el("td", { className: "err" }, j.error || ""),
+      el("td", {}, el("button", { onclick: () => act(j.id, "retry") }, "retry")))));
+  } catch (e) {
+    health.replaceChildren(el("span", { className: "dot down" }), e.message);
+  }
+}
+
+async function act(id, verb) {
+  try { await api(`/v1/jobs/${encodeURIComponent(id)}:${verb}`, { method: "POST", body: "{}" }); } catch (e) { alert(e.message); }
+  refresh();
+}
+
+function log(msg) {
+  const box = document.getElementById("log");
+  box.textContent = `${new Date().toLocaleTimeString()}  ${msg}\n` + box.textContent;
+}
+
+async function refreshDemo() {
+  const r = await fetch("/demo/workers");
+  if (!r.ok) return false;
+  document.getElementById("demo").classList.remove("hidden");
+  const workers = await r.json();
+  document.getElementById("workers").replaceChildren(...workers.map(w => el("div", { className: "worker" },
+    el("b", { className: w.alive ? "ok" : "bad" }, `${w.alive ? "●" : "○"} ${w.name}`),
+    el("small", {}, w.alive ? `pid ${w.pid}` : "restarting…"), el("br"),
+    el("small", {}, `killed ${w.kills} · restarts ${w.restarts}`))));
+  const c = await fetch("/demo/check").then(r => r.json()).catch(() => null);
+  if (c) {
+    const v = (c.violations || []).length;
+    const span = document.getElementById("check");
+    span.className = v ? "bad" : "ok";
+    span.textContent = v
+      ? `${v} invariant violation(s): ${c.violations[0]}`
+      : `exactly-once check: 0 violations across ${fmt(c.total)} jobs and ${fmt(c.ledger_rows)} ledger effects`;
+  }
+  return true;
+}
+
+document.getElementById("chaos").addEventListener("click", async e => {
+  e.target.disabled = true;
+  const r = await fetch("/demo/chaos", { method: "POST" });
+  const body = await r.json();
+  log(r.ok ? `SIGKILL ${body.killed}: its leases expire in ~2 s and survivors take the jobs` : body.error);
+  setTimeout(() => { e.target.disabled = false; }, 5000);
+  refreshDemo();
+});
+
+refresh();
+refreshDemo().then(isDemo => { if (isDemo) setInterval(refreshDemo, 2000); });
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

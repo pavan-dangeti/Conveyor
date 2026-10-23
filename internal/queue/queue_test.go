@@ -7,43 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pavan-dangeti/Conveyor/internal/migrate"
+	"github.com/pavan-dangeti/Conveyor/internal/pgtest"
 	"github.com/pavan-dangeti/Conveyor/internal/queue"
-	"github.com/pavan-dangeti/Conveyor/internal/store"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 func setup(t *testing.T) *sql.DB {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	t.Cleanup(cancel)
-	c, err := postgres.Run(ctx, "postgres:17-alpine",
-		postgres.WithDatabase("conveyor"),
-		postgres.WithUsername("conveyor"),
-		postgres.WithPassword("conveyor"),
-		testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = c.Terminate(context.Background()) })
-	dsn, err := c.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := store.Open(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := migrate.Up(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`INSERT INTO queues(name) VALUES ('q1')`); err != nil {
-		t.Fatal(err)
-	}
+	db, _ := pgtest.Start(t)
 	return db
 }
 
@@ -160,8 +129,6 @@ func TestRateLimitAndDependencyGate(t *testing.T) {
 	if _, _, err := queue.Enqueue(ctx, db, queue.EnqueueParams{Queue: "q1", Kind: "dep", Args: json.RawMessage(`{}`)}); err != nil {
 		t.Fatal(err)
 	}
-	var parent int64
-	_ = parent
 	if _, err := db.Exec(`INSERT INTO jobs(queue, kind, args, state) VALUES ('q1','parent','{}','available')`); err != nil {
 		t.Fatal(err)
 	}
